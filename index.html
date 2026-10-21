@@ -610,8 +610,8 @@ function startVoiceSession(){
   setTimeout(()=>{ boot.style.display="none"; },260);
   const first=!localStorage.getItem("xn_greeted");
   const greet = first
-    ? `${profile.name||"您好"}，我是小暖。看病前，我陪您把病情聊清楚，整理成一张摘要卡带给医生；看完医生，我帮您把药和复诊安排记得明明白白。您慢慢说，我一直听着呢。`
-    : `${profile.name||"您好"}，我回来啦。跟我说说话吧。`;
+    ? `${profile.name||"您好"}，我是小暖，您说话，我听着。`
+    : `${profile.name||"您好"}，您来啦，跟我说吧。`;
   capBot(greet);
   if(first) localStorage.setItem("xn_greeted","1");
   voiceOn=true; setMicUI();
