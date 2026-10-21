@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>陪诊小暖 · 您慢慢说，它一直听 — Android 安装包下载</title>
+<meta name="description" content="陪诊小暖是给老年人的语音小伙伴：打开就听您说话，免手接续对话，逐句播报带字幕，记忆存在自己账号里。下载 Android 安装包。">
+<meta name="theme-color" content="#f6f1e7">
+<meta property="og:type" content="website">
+<meta property="og:title" content="陪诊小暖 · 您慢慢说，它一直听">
+<meta property="og:description" content="给老年人的语音小伙伴：打开就听您说话，免手接续对话，逐句播报带字幕。">
+<meta property="og:image" content="og.png">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f6f1e7;
+  --paper-hi:#fffdfa;
+  --paper-deep:#efe7d8;
+  --teal-tint:#e2edf1;
+  --ink:#4a4038;
+  --ink-soft:#6f6455;
+  --teal:#1b6c80;
+  --teal-deep:#15586b;
+  --margin:clamp(20px,4.5vw,56px);
+  /* 五档字号，全页只用这些 */
+  --t-small:clamp(13px,.78rem + .1vw,13px);
+  --t-body:clamp(15px,.95rem + .2vw,16.5px);
+  --t-lead:clamp(18px,1.04rem + .35vw,21px);
+  --t-head:clamp(25px,1.15rem + 2vw,40px);
+  --t-display:clamp(34px,3.8vw,56px);
+  --font:"Albert Sans","Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --r:999px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--paper);color:var(--ink);font-size:var(--t-body);line-height:1.65;-webkit-font-smoothing:antialiased}
+::selection{background:var(--teal);color:var(--paper-hi)}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+svg{display:block}
+:focus-visible{outline:3px solid var(--teal);outline-offset:3px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+
+/* ---------- 通用 ---------- */
+.btn{display:inline-flex;align-items:center;gap:.6em;background:var(--teal);color:var(--paper-hi);
+  border-radius:var(--r);padding:.85em 1.9em;font-size:var(--t-body);font-weight:500;
+  transition:transform .15s ease,background .2s ease}
+.btn:hover{background:var(--teal-deep)}
+.btn:active{transform:scale(.97)}
+.btn--ghost{background:var(--paper-hi);color:var(--ink)}
+.btn--ghost:hover{background:var(--paper-hi);color:var(--teal)}
+.btn--sm{padding:.6em 1.4em;font-size:var(--t-small);font-weight:500}
+.note{font-size:var(--t-small);color:var(--ink-soft);margin-top:.9em}
+.reveal{opacity:0;transform:translateY(26px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.3,1);transition-delay:var(--d,0ms)}
+.reveal.in{opacity:1;transform:none}
+
+/* ---------- 导航 ---------- */
+.nav{position:absolute;top:20px;left:var(--margin);right:var(--margin);z-index:5;
+  display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;letter-spacing:.02em}
+.brand .char{width:26px;height:26px}
+.nav-links{display:flex;gap:clamp(16px,2.4vw,34px);font-size:var(--t-small)}
+.nav-links a{color:var(--ink-soft);transition:color .2s}
+.nav-links a:hover{color:var(--teal)}
+@media(max-width:720px){.nav-links{display:none}}
+
+/* ---------- 英雄区 ---------- */
+.hero{position:relative;min-height:100svh;padding:0 var(--margin);overflow-x:clip}
+.hero-copy{position:relative;z-index:2;max-width:min(46vw,500px);min-height:100svh;
+  display:flex;flex-direction:column;justify-content:center;padding-block:96px}
+.hero h1{font-size:var(--t-display);font-weight:600;line-height:1.12;letter-spacing:-.02em}
+.hero .lead{margin-top:.6em;font-size:var(--t-lead);line-height:1.55;max-width:26em;color:var(--ink)}
+.hero .cta-row{margin-top:1.8em;display:flex;flex-direction:column;align-items:flex-start}
+.hero-stage{position:absolute;z-index:1;left:42%;right:calc(-1*var(--margin));top:39%;bottom:-9%;
+  background:var(--teal);border-radius:var(--r);overflow:hidden;
+  -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><rect width='200' height='200' fill='white'/><circle cx='0' cy='0' r='64' fill='black'/></svg>");
+  -webkit-mask-position:0 0;-webkit-mask-repeat:no-repeat;-webkit-mask-size:200px 200px;
+  mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><rect width='200' height='200' fill='white'/><circle cx='0' cy='0' r='64' fill='black'/></svg>");
+  mask-position:0 0;mask-repeat:no-repeat;mask-size:200px 200px}
+.curtain{position:absolute;inset:-2px;background:var(--paper);z-index:3;pointer-events:none;
+  animation:curtain 1.1s cubic-bezier(.65,0,.35,1) .15s both}
+@keyframes curtain{from{clip-path:inset(0 0 0 0)}to{clip-path:inset(0 0 0 103%)}}
+.stage-inner{position:absolute;inset:0;animation:settle 1.25s cubic-bezier(.2,.7,.3,1) .05s both}
+@keyframes settle{from{transform:scale(1.12)}to{transform:scale(1)}}
+.frag{position:absolute;left:44px;top:44px;width:min(540px,84%)}
+.frag-status{display:flex;align-items:center;gap:10px;font-size:var(--t-small);color:var(--paper-hi);opacity:.92}
+.frag-status .dot{width:9px;height:9px;border-radius:50%;background:var(--paper-hi);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1)}}
+.frag-char{position:relative;width:min(220px,46%);margin:20px auto 0;aspect-ratio:1}
+.frag-char .char{position:relative;z-index:2;width:100%;height:100%}
+.ripple{position:absolute;inset:0;border:2px solid var(--paper-hi);border-radius:50%;opacity:0;animation:rip 3.2s ease-out infinite}
+.ripple.r2{animation-delay:1.06s}
+.ripple.r3{animation-delay:2.12s}
+@keyframes rip{0%{transform:scale(.74);opacity:.6}75%{opacity:0}100%{transform:scale(1.22);opacity:0}}
+.frag-sub{margin:22px auto 0;width:min(400px,86%);background:var(--paper-hi);color:var(--ink);
+  border-radius:var(--r);padding:.5em 1.3em;text-align:center;font-size:var(--t-body)}
+.frag-mic{margin:20px auto 0;width:58px;height:58px;border-radius:50%;background:var(--paper-hi);
+  color:var(--teal);display:grid;place-items:center}
+.frag-mic svg{width:26px;height:26px}
+@media(max-width:1100px){
+  .hero{display:block}
+  .hero-copy{max-width:none;min-height:0;display:block;padding-block:clamp(96px,13vh,120px) 0}
+  .hero h1{max-width:8.5em}
+  .hero .lead{max-width:26em}
+  .hero-stage{position:relative;left:auto;right:auto;top:auto;bottom:auto;
+    margin:36px calc(-1*var(--margin)) 0;height:min(52svh,420px);
+    -webkit-mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><rect width='200' height='200' fill='white'/><circle cx='0' cy='0' r='46' fill='black'/></svg>");
+    -webkit-mask-position:0 0;-webkit-mask-repeat:no-repeat;-webkit-mask-size:200px 200px;
+    mask-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><rect width='200' height='200' fill='white'/><circle cx='0' cy='0' r='46' fill='black'/></svg>");
+    mask-position:0 0;mask-repeat:no-repeat;mask-size:200px 200px}
+  .frag{left:20px;top:40px;width:calc(100% - 40px)}
+  .frag-char{width:min(200px,54%)}
+}
+
+/* ---------- 引言 ---------- */
+.intro{position:relative;z-index:2;background:var(--paper);padding:12vh var(--margin);text-align:center}
+.intro p{font-size:var(--t-lead);font-weight:500;line-height:1.5;max-width:22em;margin:0 auto;letter-spacing:.01em}
+.intro-art{display:block;width:min(1080px,100%);height:auto;margin:clamp(40px,7vh,72px) auto 0;border-radius:var(--r)}
+.thumb{display:inline-block;width:1.18em;height:.96em;vertical-align:-.14em;border-radius:.18em;
+  overflow:hidden;margin:0 .14em;background:var(--paper-hi);position:relative}
+.thumb .char{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);width:1.5em;height:1.5em}
+.thumb--teal{background:var(--teal)}
+.thumb--teal .ripple{border-color:var(--paper-hi);border-width:1.5px}
+.thumb--sub{background:var(--paper-hi);display:inline-flex;flex-direction:column;justify-content:center;gap:.14em;padding:.16em .22em}
+.thumb--sub .bar{height:.2em;border-radius:var(--r);background:var(--ink)}
+.thumb--sub .bar.s{width:62%;background:var(--teal)}
+.thumb--mem{background:var(--paper-deep);display:inline-flex;flex-direction:column;justify-content:center;gap:.13em;padding:.16em .22em}
+.thumb--mem .l{height:.16em;border-radius:var(--r);background:var(--ink-soft)}
+.thumb--mem .l.t{width:76%;background:var(--ink)}
+.thumb--mem .l.k{width:44%;background:var(--teal)}
+@media(max-width:720px){.intro{padding:9vh var(--margin);text-align:left}.intro p{margin:0;max-width:9em}}
+
+/* ---------- 母题分隔带 ---------- */
+.band{position:relative;height:clamp(64px,9vh,104px);background:var(--ink);overflow:hidden}
+.band .ring{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:clamp(60px,8.4vh,96px);aspect-ratio:1;border:2.5px solid var(--paper-hi);border-radius:50%;opacity:.95}
+.band .ring.r2{width:clamp(38px,5.4vh,62px);opacity:.5}
+.band .ring.r3{width:clamp(18px,2.6vh,30px);opacity:.28}
+
+/* ---------- 功能 ---------- */
+.features{padding:clamp(72px,11vh,130px) var(--margin)}
+.features-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:32px}
+.features-head{grid-column:1/4}
+.features-head h2{font-size:var(--t-head);font-weight:600;line-height:1.15;letter-spacing:-.02em;max-width:6em}
+.features-head p{margin-top:1em;font-size:var(--t-body);color:var(--ink-soft);max-width:22em}
+.features-art{display:block;width:min(300px,80%);height:auto;margin:2.2em 0 0}
+.tiles{grid-column:4/13;display:grid;grid-template-columns:repeat(6,1fr);gap:10px;align-items:start}
+.tile-item{grid-column:span 2}
+.tile-item.wide{grid-column:span 4}
+.tile{border-radius:var(--r);aspect-ratio:1/1;display:grid;place-items:center;position:relative;overflow:hidden}
+.tile-item.wide .tile{aspect-ratio:8/5}
+.tile.f1{background:var(--paper-hi)}
+.tile.f2{background:var(--teal-tint)}
+.tile.f3{background:var(--paper-deep)}
+.tile figcaption{margin-top:.9em}
+.tile-name{font-size:var(--t-lead);font-weight:500}
+.tile-fact{font-size:var(--t-body);color:var(--ink-soft);margin-top:.25em;max-width:30em}
+.tile-obj{display:grid;place-items:center}
+/* 磁贴内物体 */
+.obj-mic{position:relative;width:40%;aspect-ratio:1;display:grid;place-items:center}
+.obj-mic .m{width:52%;aspect-ratio:1;border-radius:50%;background:var(--teal);color:var(--paper-hi);display:grid;place-items:center;position:relative;z-index:2}
+.obj-mic .m svg{width:46%;height:46%}
+.obj-mic .ripple{border-color:var(--teal)}
+.obj-wave{width:76%;height:64%}
+.obj-wave rect{fill:var(--teal)}
+.obj-rings{position:relative;width:62%;aspect-ratio:1}
+.obj-rings i{position:absolute;inset:0;border:3px solid var(--teal);border-radius:50%}
+.obj-rings i:nth-child(2){inset:22%}
+.obj-rings i:nth-child(3){inset:44%;background:var(--teal)}
+.obj-stop{display:flex;align-items:center;gap:12%}
+.obj-stop .m{width:48px;height:48px;border-radius:50%;background:var(--teal);color:var(--paper-hi);display:grid;place-items:center}
+.obj-stop .m svg{width:44%;height:44%}
+.obj-stop .s{width:20px;height:20px;border-radius:7px;background:var(--ink)}
+.crop-sub[data-ui]{width:84%;background:var(--paper-hi);border-radius:var(--r);padding:.8em 1.1em;display:flex;align-items:center;gap:.7em;
+  border:1px solid #e9dfcc;box-shadow:0 6px 18px rgba(27,108,128,.08)}
+.crop-sub .mini{width:2.2em;height:2.2em;flex:none}
+.crop-sub .t{flex:1;min-width:0}
+.crop-sub .t b{display:block;height:.42em;border-radius:var(--r);background:var(--ink);width:88%}
+.crop-sub .t i{display:block;height:.42em;border-radius:var(--r);background:var(--teal);width:56%;margin-top:.35em}
+.crop-mem[data-ui]{width:86%;background:var(--paper-hi);border-radius:var(--r);padding:.9em 1.1em;
+  border:1px solid #e9dfcc;box-shadow:0 6px 18px rgba(27,108,128,.08)}
+.crop-mem h3{font-size:var(--t-small);font-weight:500;color:var(--ink)}
+.crop-mem .row{display:flex;align-items:center;gap:.5em;margin-top:.55em;font-size:var(--t-small);color:var(--ink-soft)}
+.crop-mem .row .d{width:.5em;height:.5em;border-radius:50%;background:var(--teal);flex:none}
+@media(max-width:860px){
+  .features-grid{display:block}
+  .features-head{margin-bottom:2.2em}
+  .features-art{width:min(460px,92%)}
+  .tiles{grid-template-columns:repeat(2,1fr);gap:8px}
+  /* 平板两列：前四个各占一格，最后一个通栏，避免网格空洞 */
+  .tile-item,.tile-item.wide{grid-column:span 1}
+  .tile-item.wide .tile{aspect-ratio:1/1}
+  .tile-item:last-child{grid-column:span 2}
+  .tile-item:last-child .tile{aspect-ratio:8/5}
+  .tile-name{font-size:var(--t-body)}
+  .tile-fact{font-size:var(--t-small)}
+}
+
+/* ---------- 话筒演示 ---------- */
+.showcase{position:relative;height:70svh;background:var(--teal);color:var(--paper-hi);overflow:hidden;
+  transition:background .5s ease}
+.showcase.muted{background:var(--ink)}
+.showcase-head{position:absolute;top:clamp(64px,8vh,84px);left:var(--margin);right:var(--margin);z-index:3;max-width:34em}
+.showcase-head h2{font-size:var(--t-head);font-weight:600;letter-spacing:-.02em;line-height:1.2}
+.showcase-head p{margin-top:.7em;font-size:var(--t-body);max-width:30em;opacity:.92}
+.mic-ctl{position:absolute;right:-4%;bottom:-2%;width:34vh;height:34vh;border-radius:50%;
+  background:var(--paper-hi);color:var(--teal);display:grid;place-items:center;
+  transition:transform .15s ease,color .4s ease}
+.showcase.muted .mic-ctl{color:var(--ink)}
+.mic-ctl:active{transform:scale(.96)}
+.mic-ctl .ic{width:44%;height:44%}
+.mic-ctl .lab{position:absolute;bottom:12%;left:50%;transform:translateX(-50%);
+  font-size:var(--t-body);font-weight:500;white-space:nowrap}
+.mic-ctl .ripple{border-color:var(--paper-hi);border-width:3px}
+.showcase.muted .mic-ctl .ripple{display:none}
+@media(max-width:720px){
+  .showcase{height:68svh}
+  .mic-ctl{right:auto;left:50%;bottom:-12%;transform:translateX(-54%);width:58vw;height:58vw}
+  .mic-ctl:active{transform:translateX(-54%) scale(.96)}
+}
+
+/* ---------- 常见问题 ---------- */
+.faq{padding:clamp(72px,11vh,130px) var(--margin)}
+.faq-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:32px}
+.faq-head{grid-column:1/5;position:sticky;top:84px;align-self:start}
+.faq-head h2{font-size:var(--t-head);font-weight:600;letter-spacing:-.02em;line-height:1.1}
+.faq-list{grid-column:5/13;display:flex;flex-direction:column;gap:8px}
+details.qa{background:var(--paper-deep);border-radius:var(--r);overflow:hidden}
+details.qa summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;
+  gap:20px;min-height:60px;padding:14px 22px;font-size:var(--t-lead);font-weight:500}
+details.qa summary::-webkit-details-marker{display:none}
+details.qa .plus{position:relative;width:16px;height:16px;flex:none}
+details.qa .plus::before,details.qa .plus::after{content:"";position:absolute;background:var(--teal);border-radius:2px}
+details.qa .plus::before{left:0;top:6.5px;width:16px;height:3px}
+details.qa .plus::after{left:6.5px;top:0;width:3px;height:16px;transition:transform .3s ease}
+details.qa[open] .plus::after{transform:rotate(90deg)}
+details.qa[open] summary{color:var(--paper-hi)}
+details.qa[open]{background:var(--teal)}
+details.qa[open] .plus::before,details.qa[open] .plus::after{background:var(--paper-hi)}
+details.qa .ans{padding:0 22px 20px;font-size:var(--t-body);max-width:52ch;color:var(--ink)}
+details.qa[open] .ans{color:var(--paper-hi)}
+@media(max-width:860px){
+  .faq-grid{display:block}
+  .faq-head{position:static;margin-bottom:1.6em}
+  .faq-list{gap:6px}
+  details.qa summary{min-height:64px;padding:16px 22px;font-size:var(--t-body)}
+  details.qa .ans{padding:0 22px 20px;font-size:var(--t-body)}
+}
+
+/* ---------- 结尾行动区 ---------- */
+.cta{position:relative;background:var(--teal);color:var(--paper-hi);min-height:62svh;
+  display:grid;grid-template-columns:repeat(12,1fr);gap:40px;padding:0 var(--margin);align-items:center}
+.cta-copy{grid-column:1/6;align-self:end;padding-bottom:clamp(40px,6vh,64px)}
+.cta-copy h2{font-size:var(--t-display);font-weight:600;line-height:.98;letter-spacing:-.03em}
+.cta-copy p{margin-top:1.1em;font-size:var(--t-body);max-width:26em;opacity:.95}
+.cta-side{grid-column:7/12;display:flex;flex-direction:column;align-items:center;gap:24px;padding:clamp(48px,7vh,72px) 0}
+.phone{width:min(320px,72vw);background:var(--paper-hi);border-radius:var(--r);padding:26px 18px 24px;
+  display:flex;flex-direction:column}
+.phone .char{width:min(190px,60%);margin:0 auto}
+.phone .ripple{border-color:var(--teal)}
+.phone-sub{width:100%;text-align:center;font-size:var(--t-small);color:var(--ink);background:var(--paper-deep);
+  border-radius:var(--r);padding:.5em 1em;margin-top:14px}
+.phone-mic{margin:16px auto 0;width:50px;height:50px;border-radius:50%;background:var(--teal);
+  color:var(--paper-hi);display:grid;place-items:center}
+.phone-mic svg{width:22px;height:22px}
+.cta-side .btn{width:min(320px,72vw);justify-content:center}
+.cta-side .note{color:var(--paper-hi);opacity:.85;text-align:center}
+@media(max-width:860px){
+  .cta{display:block;padding:clamp(56px,8vh,72px) var(--margin)}
+  .cta-copy{padding-bottom:40px}
+  .cta-side{padding:0}
+}
+
+/* ---------- 页脚 ---------- */
+footer{background:var(--paper-deep);padding:clamp(56px,8vh,88px) var(--margin) 36px}
+.mark{display:flex;gap:4px;align-items:flex-end;height:clamp(96px,17svh,180px);margin-bottom:40px}
+.mark span{flex:1;display:grid;place-items:center;border-radius:var(--r);font-weight:600;
+  font-size:var(--t-display);color:var(--paper-hi);line-height:1;padding-bottom:.06em}
+.mark .b1{height:100%;background:var(--teal)}
+.mark .b2{height:82%;background:var(--ink)}
+.mark .b3{height:64%;background:var(--teal-deep)}
+.mark .b4{height:91%;background:var(--teal)}
+.foot-cols{display:grid;grid-template-columns:2fr 2fr 2fr 3fr;gap:32px;font-size:var(--t-small)}
+.foot-cols h3{font-size:var(--t-small);font-weight:500;color:var(--ink-soft);margin-bottom:.8em}
+.foot-cols ul{list-style:none}
+.foot-cols li{margin-bottom:.5em}
+.foot-cols a{color:var(--ink)}
+.foot-cols a:hover{color:var(--teal)}
+.foot-bottom{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-top:40px}
+.foot-bottom small{color:var(--ink-soft);font-size:var(--t-small)}
+@media(max-width:720px){
+  .foot-cols{grid-template-columns:1fr 1fr}
+  .foot-bottom{flex-direction:column;align-items:flex-start;gap:18px}
+}
+
+/* ---------- 动效偏好 ---------- */
+@media(prefers-reduced-motion:reduce){
+  .reveal{opacity:1;transform:none;transition:none}
+  .curtain{display:none}
+  .stage-inner{animation:none}
+  .ripple,.frag-status .dot{animation:none;opacity:.5}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<!-- 小暖形象（产品自有 IP，一次定义全页复用） -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="xn" viewBox="0 0 220 208">
+    <style>
+      .xn-b{animation:xnb 4.6s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 92%}
+      @keyframes xnb{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+      .xn-e{animation:xne 5.4s infinite;transform-box:fill-box;transform-origin:center}
+      @keyframes xne{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.08)}}
+    </style>
+    <g class="xn-b">
+      <path d="M112 54 C102 36 132 30 127 47 C125 55 114 54 113 49" fill="none" stroke="#5a4f44" stroke-width="4" stroke-linecap="round"/>
+      <ellipse cx="110" cy="124" rx="70" ry="64" fill="#fffdfa" stroke="#e6dccd" stroke-width="3"/>
+      <circle cx="62" cy="124" r="10" fill="#f7c6b8" opacity=".8"/>
+      <circle cx="158" cy="124" r="10" fill="#f7c6b8" opacity=".8"/>
+      <g class="xn-e">
+        <circle cx="86" cy="108" r="7" fill="#4a4038"/>
+        <circle cx="134" cy="108" r="7" fill="#4a4038"/>
+      </g>
+      <path d="M96 130 Q110 142 124 130" fill="none" stroke="#4a4038" stroke-width="4" stroke-linecap="round"/>
+      <path d="M66 148 C66 176 92 187 110 187 C128 187 154 176 154 148" fill="none" stroke="#1b6c80" stroke-width="4.5" stroke-linecap="round"/>
+      <circle cx="110" cy="186" r="9" fill="#fff" stroke="#1b6c80" stroke-width="3"/>
+    </g>
+  </symbol>
+  <symbol id="mic" viewBox="0 0 24 24">
+    <rect x="9" y="2.5" width="6" height="12" rx="3" fill="currentColor"/>
+    <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M12 18.2v2.3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M8.6 21.4h6.8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+  </symbol>
+</svg>
+
+<nav class="nav">
+  <a class="brand" href="#top">
+    <svg class="char" aria-hidden="true"><use href="#xn"/></svg>
+    陪诊小暖
+  </a>
+  <div class="nav-links">
+    <a href="#features">它能做什么</a>
+    <a href="#showcase">话筒</a>
+    <a href="#faq">常见问题</a>
+    <a href="#download">下载</a>
+  </div>
+</nav>
+
+<!-- 英雄区 -->
+<header class="hero" id="top">
+  <div class="hero-copy">
+    <h1 class="reveal in">您慢慢说，<br>小暖一直听。</h1>
+    <p class="lead reveal" style="--d:90ms">陪诊小暖是给老年人的语音小伙伴。去医院、候诊、问诊，路上随时陪您说话——不用点，不用学。</p>
+    <div class="cta-row reveal" style="--d:180ms">
+      <a class="btn" href="xiaonuan-v0.0.1.apk" download="陪诊小暖-v0.0.1.apk">
+        <svg width="20" height="20" aria-hidden="true"><use href="#mic"/></svg>
+        下载 Android 安装包
+      </a>
+      <p class="note">v0.0.1 · 不到 1MB · Android 8.0 以上</p>
+    </div>
+  </div>
+  <div class="hero-stage" aria-hidden="true">
+    <div class="stage-inner">
+      <div class="frag" data-ui>
+        <div class="frag-status"><span class="dot"></span>小暖正在听…</div>
+        <div class="frag-char">
+          <span class="ripple"></span><span class="ripple r2"></span><span class="ripple r3"></span>
+          <svg class="char"><use href="#xn"/></svg>
+        </div>
+        <div class="frag-sub">我在听，您说。</div>
+        <div class="frag-mic"><svg><use href="#mic"/></svg></div>
+      </div>
+    </div>
+    <div class="curtain"></div>
+  </div>
+</header>
+
+<!-- 引言 -->
+<section class="intro">
+  <p class="reveal">您说话，小暖听着；<span class="thumb thumb--teal"><span class="ripple"></span><span class="ripple r2"></span><svg class="char"><use href="#xn"/></svg></span>您停下，小暖答话；<span class="thumb thumb--sub"><span class="bar"></span><span class="bar s"></span></span>您的事，小暖都记着。<span class="thumb thumb--mem"><span class="l t"></span><span class="l"></span><span class="l k"></span></span></p>
+  <img class="intro-art reveal" style="--d:120ms" src="scene-intro.png" alt="小暖听着您说话，手机字幕上写着：我在听，您说。" width="1200" height="480">
+</section>
+
+<!-- 母题分隔带 -->
+<div class="band" aria-hidden="true">
+  <span class="ring"></span><span class="ring r2"></span><span class="ring r3"></span>
+</div>
+
+<!-- 功能 -->
+<section class="features" id="features">
+  <div class="features-grid">
+    <div class="features-head reveal">
+      <h2>小暖能陪您做什么</h2>
+      <p>不用学，也不用记。打开手机，它已经在听。</p>
+      <img class="features-art" src="scene-features.png" alt="小暖的记忆卡片：血压 138/85，早上量的；药继续吃，下周复查" width="640" height="640">
+    </div>
+    <div class="tiles">
+      <figure class="tile-item reveal" style="--d:60ms">
+        <div class="tile f1">
+          <div class="crop-sub" data-ui>
+            <svg class="mini char"><use href="#xn"/></svg>
+            <span class="t"><b></b><i></i></span>
+          </div>
+        </div>
+        <figcaption>
+          <div class="tile-name">逐句播报，带着字幕</div>
+          <p class="tile-fact">它说的每句话，都念出来，也写在屏幕上。</p>
+        </figcaption>
+      </figure>
+      <figure class="tile-item wide reveal" style="--d:120ms">
+        <div class="tile f2">
+          <div class="obj-mic">
+            <span class="ripple"></span><span class="ripple r2"></span>
+            <span class="m"><svg><use href="#mic"/></svg></span>
+          </div>
+        </div>
+        <figcaption>
+          <div class="tile-name">免手接续对话</div>
+          <p class="tile-fact">说完停一停，它自动听、自动答，不用反复点话筒。</p>
+        </figcaption>
+      </figure>
+      <figure class="tile-item reveal" style="--d:180ms">
+        <div class="tile f3">
+          <div class="crop-mem" data-ui>
+            <h3>今天记的事</h3>
+            <div class="row"><span class="d"></span>血压 138/85，早上量的</div>
+            <div class="row"><span class="d"></span>医生说：药继续吃，下周复查</div>
+          </div>
+        </div>
+        <figcaption>
+          <div class="tile-name">记得您的事</div>
+          <p class="tile-fact">身体情况、问诊记录，记在您自己的账号里。</p>
+        </figcaption>
+      </figure>
+      <figure class="tile-item reveal" style="--d:60ms">
+        <div class="tile f1">
+          <div class="obj-stop">
+            <span class="m"><svg><use href="#mic"/></svg></span>
+            <span class="s"></span>
+          </div>
+        </div>
+        <figcaption>
+          <div class="tile-name">您随时能打断</div>
+          <p class="tile-fact">它话没说完，您一开口，它就停下来听您说。</p>
+        </figcaption>
+      </figure>
+      <figure class="tile-item reveal" style="--d:120ms">
+        <div class="tile f2">
+          <svg class="obj-wave" viewBox="0 0 120 44" preserveAspectRatio="none" aria-hidden="true">
+            <rect x="2" y="14" width="16" height="16" rx="8"/>
+            <rect x="26" y="6" width="16" height="32" rx="8"/>
+            <rect x="50" width="16" height="44" rx="8"/>
+            <rect x="74" y="11" width="16" height="22" rx="8"/>
+            <rect x="98" y="4" width="16" height="36" rx="8"/>
+          </svg>
+        </div>
+        <figcaption>
+          <div class="tile-name">声音柔柔和和</div>
+          <p class="tile-fact">不慌不忙，像家里的孩子在一旁说话。</p>
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- 话筒演示 -->
+<section class="showcase" id="showcase">
+  <div class="showcase-head reveal">
+    <h2 id="scHeading">小暖在听，您就说</h2>
+    <p>全部操作就这一个大按钮：点一下开始听，再点一下，让它先安静。</p>
+  </div>
+  <button class="mic-ctl" id="micBtn" aria-pressed="true" aria-label="切换聆听和静音">
+    <span class="ripple"></span><span class="ripple r2"></span>
+    <svg class="ic"><use href="#mic"/></svg>
+    <span class="lab" id="scLabel">聆听中</span>
+  </button>
+</section>
+
+<!-- 常见问题 -->
+<section class="faq" id="faq">
+  <div class="faq-grid">
+    <div class="faq-head reveal">
+      <h2>常见问题</h2>
+    </div>
+    <div class="faq-list">
+      <details class="qa reveal" name="faq" open>
+        <summary>安装时手机提醒“未知来源”怎么办？<span class="plus"></span></summary>
+        <div class="ans">安卓默认不让装应用商店以外的安装包。安装时弹出提醒，点“继续安装”或“允许”就可以，只此一次。</div>
+      </details>
+      <details class="qa reveal" name="faq" style="--d:60ms">
+        <summary>要注册账号吗？<span class="plus"></span></summary>
+        <div class="ans">要。用用户名和密码注册，小暖把每个人的话分开记，一家几口人的记忆不串门。</div>
+      </details>
+      <details class="qa reveal" name="faq" style="--d:120ms">
+        <summary>老人家真能不用学？<span class="plus"></span></summary>
+        <div class="ans">打开就在听，说话就行。说完停一停，它自动接话；嫌它说得慢，开口就能打断。</div>
+      </details>
+      <details class="qa reveal" name="faq" style="--d:240ms">
+        <summary>什么手机能用？<span class="plus"></span></summary>
+        <div class="ans">Android 8.0 以上的手机都可以，安装包不到 1MB，不占地方。</div>
+      </details>
+      <details class="qa reveal" name="faq" style="--d:300ms">
+        <summary>需要什么权限？<span class="plus"></span></summary>
+        <div class="ans">只用麦克风（听您说话）和联网（识别语音）。别的权限一概不要。</div>
+      </details>
+      <details class="qa reveal" name="faq" style="--d:360ms">
+        <summary>收费吗？记忆存在哪？<span class="plus"></span></summary>
+        <div class="ans">免费。记忆存在您自己的账号下，退出登录也带得走。</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- 结尾行动区 -->
+<section class="cta" id="download">
+  <div class="cta-copy reveal">
+    <h2>装好，<br>就能聊。</h2>
+    <p>点右边的按钮开始下载，几秒下完。装上打开，小暖已经在听。</p>
+  </div>
+  <div class="cta-side reveal" style="--d:120ms">
+    <div class="phone" data-ui>
+      <svg class="char"><use href="#xn"/></svg>
+      <div class="phone-sub">我在听，您说。</div>
+      <div class="phone-mic"><svg><use href="#mic"/></svg></div>
+    </div>
+    <a class="btn btn--ghost" href="xiaonuan-v0.0.1.apk" download="陪诊小暖-v0.0.1.apk">
+      <svg width="20" height="20" aria-hidden="true"><use href="#mic"/></svg>
+      下载 Android 安装包
+    </a>
+    <p class="note">v0.0.1 · Android 8.0 以上</p>
+  </div>
+</section>
+
+<!-- 页脚 -->
+<footer>
+  <div class="mark" aria-hidden="true">
+    <span class="b1">陪</span><span class="b2">诊</span><span class="b3">小</span><span class="b4">暖</span>
+  </div>
+  <div class="foot-cols">
+    <div>
+      <h3>下载</h3>
+      <ul>
+        <li><a href="xiaonuan-v0.0.1.apk" download="陪诊小暖-v0.0.1.apk">Android 安装包 v0.0.1</a></li>
+        <li><a href="#faq">安装说明</a></li>
+      </ul>
+    </div>
+    <div>
+      <h3>了解小暖</h3>
+      <ul>
+        <li><a href="#features">它能做什么</a></li>
+        <li><a href="#showcase">话筒怎么用</a></li>
+      </ul>
+    </div>
+    <div>
+      <h3>应用主页</h3>
+      <ul>
+        <li><a href="https://xiaonuan.27c.site" rel="noopener">xiaonuan.27c.site</a></li>
+      </ul>
+    </div>
+    <div>
+      <h3>关于本页</h3>
+      <ul>
+        <li>xnai.27c.site</li>
+        <li>安装包版本 v0.0.1 · 2026 年 10 月</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot-bottom">
+    <small>© <span id="year">2026</span> 陪诊小暖 · 语音陪伴小伙伴</small>
+    <a class="btn btn--sm" href="xiaonuan-v0.0.1.apk" download="陪诊小暖-v0.0.1.apk">下载安装包</a>
+  </div>
+</footer>
+
+<script>
+(function(){
+  // 入场动效
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+  },{threshold:.12,rootMargin:'0px 0px -8% 0px'});
+  document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
+
+  // 话筒演示：聆听 / 静音 切换
+  var mic = document.getElementById('micBtn'),
+      sc  = document.getElementById('showcase'),
+      h   = document.getElementById('scHeading'),
+      lab = document.getElementById('scLabel'),
+      listening = true;
+  mic.addEventListener('click', function(){
+    listening = !listening;
+    sc.classList.toggle('muted', !listening);
+    mic.setAttribute('aria-pressed', String(listening));
+    h.textContent = listening ? '小暖在听，您就说' : '小暖在等，您再点';
+    lab.textContent = listening ? '聆听中' : '已静音';
+  });
+
+  // 帘幕动画结束后移除，避免拦截交互
+  var c = document.querySelector('.curtain');
+  if (c) c.addEventListener('animationend', function(){ c.style.display = 'none'; });
+
+  document.getElementById('year').textContent = '2026';
+})();
+</script>
+</body>
+</html>
