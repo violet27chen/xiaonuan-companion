@@ -2,6 +2,12 @@ plugins {
     id 'com.android.application'
 }
 
+// release 签名：CI 经环境变量注入（keystore 由 GitHub secrets 解码传入）；本地构建导出同名变量即可用
+def ksPath = System.getenv("ANDROID_KEYSTORE_PATH")
+def ksPass = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+def ksAlias = System.getenv("ANDROID_KEY_ALIAS")
+def ksKeyPass = System.getenv("ANDROID_KEY_PASSWORD")
+
 android {
     namespace 'com.xiaonuan.companion'
     compileSdk 34
@@ -14,9 +20,23 @@ android {
         versionName "1.0"
     }
 
+    signingConfigs {
+        if (ksPath != null) {
+            release {
+                storeFile file(ksPath)
+                storePassword ksPass
+                keyAlias ksAlias
+                keyPassword ksKeyPass
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
+            if (signingConfigs.findByName("release") != null) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
