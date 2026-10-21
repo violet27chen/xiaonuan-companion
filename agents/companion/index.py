@@ -31,14 +31,14 @@ async def handler(ctx):
         tok, err = await _users.register(ctx, username, body.get("password") or "")
         if err:
             return {"error": err}, 400
-        return {"token": tok, "username": username}
+        return {"token": tok, "username": username, "cid": _users.conv_id(username)}
 
     if action == "login":
         username = (body.get("username") or "").strip()
         tok, err = await _users.login(ctx, username, body.get("password") or "")
         if err:
             return {"error": err}, 400
-        return {"token": tok, "username": username}
+        return {"token": tok, "username": username, "cid": _users.conv_id(username)}
 
     if action == "logout":
         await _users.logout(ctx, token)
@@ -97,7 +97,7 @@ async def handler(ctx):
     checkpointer = getattr(ctx.store, "langgraph_checkpointer", None) if ctx.store else None
     graph = build_graph(ctx.env, checkpointer=checkpointer)
     # 每个用户一条独立会话线：对话历史、问诊进度、记忆互不串扰
-    thread_id = f"u-{_users._uid(username)}"
+    thread_id = _users.conv_id(username)
 
     async def gen():
         if from_audio:

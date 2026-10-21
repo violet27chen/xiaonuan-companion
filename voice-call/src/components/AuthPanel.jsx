@@ -27,7 +27,7 @@ export default function AuthPanel({ onAuth }) {
     setBusy(true);
     try {
       const j = mode === "register" ? await register(u, password) : await login(u, password);
-      setAuth(j.token, j.username);
+      setAuth(j.token, j.username, j.cid);
       onAuth();
     } catch (e2) {
       setErr(e2.message || "出了点问题，再试一次");
@@ -49,9 +49,9 @@ export default function AuthPanel({ onAuth }) {
         }}
       />
       <div className="relative flex h-full flex-col items-center justify-center overflow-y-auto px-8 py-10">
-        {/* 小暖形象 + 标题 */}
+        {/* 小暖形象 + 标题：内联 width 压过 .companion 的 56vmin（那是通话主界面的尺寸） */}
         <div className="w-[38vmin] max-w-[220px] shrink-0">
-          <Companion audioLevel={0} talking={false} listening={false} />
+          <Companion audioLevel={0} talking={false} listening={false} style={{ width: "100%" }} />
         </div>
         <h1 className="mt-2 text-[26px] font-medium text-[#4a4038]">陪诊小暖</h1>
         <p className="mt-1 mb-6 text-[14px] text-[#8a7f72]">

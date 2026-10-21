@@ -4,7 +4,7 @@
  * - listening：三层涟漪（收听中）
  * - talking：说话嘴型 + 身体轻摇；整体缩放随 audioLevel 呼吸
  */
-export default function Companion({ audioLevel = 0, talking = false, listening = true }) {
+export default function Companion({ audioLevel = 0, talking = false, listening = true, style }) {
   const level = Math.min(Math.max(audioLevel, 0), 1);
   return (
     <div
@@ -12,6 +12,7 @@ export default function Companion({ audioLevel = 0, talking = false, listening =
       style={{
         transform: `scale(${1 + level * 0.05})`,
         transition: "transform .15s ease-out",
+        ...style,
       }}
     >
       <span className="ring" aria-hidden="true" />

@@ -8,28 +8,20 @@
  * - demoReply        演示模式预置回复（服务不可达时保证回路可演示）
  */
 
-import { getToken, getUser, notifyAuthLost } from "./auth.js";
+import { getToken, getCid, notifyAuthLost } from "./auth.js";
 
 const API = "/companion";
 
-let cid =
-  localStorage.getItem("vc_cid") ||
-  (() => {
-    const v = "c-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
-    localStorage.setItem("vc_cid", v);
-    return v;
-  })();
-
 function post(body, signal) {
-  const user = getUser();
   const token = getToken();
   if (token) body.token = token;
   return fetch(API, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      // 登录后按用户隔离会话线：多人共用一台设备，记忆和对话也不串
-      "makers-conversation-id": user ? "u-" + user : cid,
+      // 会话线：登录后是按用户分配的 id（后端返回），未登录为浏览器临时值；
+      // 平台要求 6-36 位 [0-9a-zA-Z-_.]，每次请求都必须带
+      "makers-conversation-id": getCid(),
     },
     body: JSON.stringify(body),
     signal,

@@ -24,6 +24,11 @@ def sess_key(token: str) -> str:
     return f"xn:s:{token}"
 
 
+def conv_id(username: str) -> str:
+    """按用户的会话线 id：ASCII 安全，符合平台 header 规范（6-36 位 [0-9a-zA-Z-_.]）"""
+    return f"u-{_uid(username)}"
+
+
 def profile_key(username: str) -> str:
     return f"xn:p:{_uid(username)}"
 
