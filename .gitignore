@@ -1,0 +1,20 @@
+.env
+.edgeone/
+__pycache__/
+*.pyc
+.conda/
+node_modules/
+.DS_Store
+.taste-skill/
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk.idsig
+
+# Tencent Cloud EdgeOne
+.env
+.edgeone/*
+.tef_dist/*
