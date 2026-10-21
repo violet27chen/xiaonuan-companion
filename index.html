@@ -99,6 +99,9 @@
   #bigMic.off:active{background:var(--active)}
   @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
   .hint{font-size:14px;color:var(--muted);text-align:center}
+  .pause{border:none;background:none;color:var(--muted);font-size:13px;
+    text-decoration:underline;text-underline-offset:3px;padding:2px 8px}
+  .pause:active{color:var(--accent-deep)}
   .safety{font-size:12px;color:var(--muted);text-align:center}
 
   /* ---------- 结构化卡片 ---------- */
@@ -229,13 +232,14 @@
   </div>
 </main>
 
-<!-- ============ 语音底部：字幕 + 大话筒 ============ -->
+<!-- ============ 语音底部：字幕 + 大话筒 + 暂停 ============ -->
 <footer class="voice" id="vFoot">
   <div class="subtitle" id="subtitle" aria-live="polite"></div>
-  <button id="bigMic" class="off" onclick="bigMic()" aria-label="打开或关闭语音">
+  <button id="bigMic" class="off" onclick="bigMic()" aria-label="开始说话或发送">
     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
   </button>
   <div class="hint" id="hint">点一下话筒，我就一直听您说</div>
+  <button class="pause" id="pauseBtn" onclick="pauseVoice()">暂停语音</button>
   <div class="safety">小暖只帮您整理和提醒，不做诊断、不推荐药物；紧急情况请拨打 120</div>
 </footer>
 
@@ -310,9 +314,10 @@ function saveProfile(){
 
 /* ================= 状态机 ================= */
 const voiceView=document.getElementById("voiceView"), statusEl=document.getElementById("status");
+const pauseBtn=document.getElementById("pauseBtn");
 const STATUS={
   idle:"语音关了 · 点一下话筒再开始",
-  listen:"在听您说…（说完停一停就好）",
+  listen:"在听您说…（说完了点一下话筒）",
   think:"小暖在想…",
   speak:"小暖在说… 点话筒停"
 };
@@ -326,7 +331,12 @@ function setMicUI(){
   const m=document.getElementById("bigMic");
   m.classList.toggle("off", !voiceOn);
   m.classList.toggle("rec", !!recCtx);
-  document.getElementById("hint").textContent = voiceOn ? "点一下暂停 · 我一直听您说" : "点一下话筒，我就一直听您说";
+  pauseBtn.style.visibility=(voiceOn||paused)?"visible":"hidden";
+  document.getElementById("hint").textContent =
+    paused ? "已暂停，点“继续语音”接着说" :
+    recCtx ? "说完了点一下话筒，就发给小暖" :
+    (busy||curAudio) ? "点一下话筒，您来说" :
+    "点一下话筒，我就一直听您说";
 }
 
 /* ================= 字幕（说的话同步显示在大话筒上方） ================= */
@@ -453,6 +463,7 @@ async function startRec(){
   try{
     recCtx=new (window.AudioContext||window.webkitAudioContext)();
     if(recCtx.state==="suspended"){ recCtx.resume().catch(()=>{}); }
+    recStream=stream; unlockTries=0;
     recBuf=[]; recFrames=0; speechSeen=false; silenceMs=0;
     recSrc=recCtx.createMediaStreamSource(stream);
     recProc=recCtx.createScriptProcessor(4096,1,1);
@@ -486,16 +497,21 @@ async function startRec(){
     setVS("idle","麦克风出了点问题，点一下话筒再试");
   }finally{ recStarting=false; }
 }
-function armRecTimer(){ clearTimeout(recTimer); recTimer=setTimeout(stopRec,60000); }
+function armRecTimer(){ clearTimeout(recTimer); recTimer=setTimeout(()=>stopRec(false),60000); }
 /* 音频通道自检：4 秒还没收到任何声音帧，就提示或自动重听一次 */
 function armFrameWatch(){
   clearTimeout(recWatch);
   recWatch=setTimeout(()=>{
     if(!recCtx || recFrames>0) return;
-    const suspended=recCtx.state==="suspended";
+    if(recCtx.state==="suspended"){
+      // 浏览器/WebView 还没拿到用户手势：别关麦克风，等第一次点屏幕解锁（unlockAudio 会重新计时）
+      setVS("listen","点一下屏幕，我就开始听");
+      document.getElementById("hint").textContent="点一下屏幕就开始了";
+      toast("点一下屏幕，小暖就开始听");
+      return;
+    }
     stopRec(true);
-    if(suspended){ setVS("idle","点一下屏幕，我就开始听"); document.getElementById("hint").textContent="点一下屏幕就开始了"; }
-    else if(voiceOn){ setVS("idle","没收到声音，小暖再听一次"); setTimeout(()=>{ if(voiceOn && !recCtx && !recStarting) startRec(); },800); }
+    if(voiceOn){ setVS("idle","没收到声音，小暖再听一次"); setTimeout(()=>{ if(voiceOn && !recCtx && !recStarting) startRec(); },800); }
   },4000);
 }
 function stopRec(silent){
@@ -503,13 +519,13 @@ function stopRec(silent){
   clearTimeout(recTimer); clearTimeout(recWatch);
   const rate=recCtx.sampleRate, chunks=recBuf;
   try{ recProc.disconnect(); recSrc.disconnect(); }catch(e){}
-  recStream.getTracks().forEach(t=>t.stop());
+  if(recStream) recStream.getTracks().forEach(t=>t.stop());
   recCtx.close(); recCtx=null; recProc=null; recSrc=null; recStream=null; recBuf=[];
   setMicUI();
   document.getElementById("ipWrap").style.setProperty("--amp",0);
   if(silent) return;
   const total=chunks.reduce((n,c)=>n+c.length,0);
-  if(total<rate*0.7){ setVS("idle","刚才没听清，您再说一遍"); return; }
+  if(total<rate*0.7 || !speechSeen){ setVS("idle","还没听到您说话，您再说"); if(voiceOn) scheduleListen(); return; }
   const pcm=new Float32Array(total); let off=0;
   chunks.forEach(c=>{ pcm.set(c,off); off+=c.length; });
   const blob=encodeWav(pcm,rate);
@@ -517,24 +533,79 @@ function stopRec(silent){
   blobToB64(blob).then(b64=>streamSend({audio:b64, mime:"audio/wav"}));
 }
 
-/* ================= 大话筒 = 语音总开关（点一下关，再点一下开） ================= */
-let abortCtl=null, gestureUsedAt=0;
+/* ================= 大话筒：说完了发送 / 打断 / 开关 ================= */
+let abortCtl=null, paused=false, replayGuardAt=0, unlockTries=0;
 function bigMic(){
-  // 这一下刚刚被用来解锁音频/补播了，就不再当成“切换开关”
-  if(Date.now()-gestureUsedAt<900) return;
-  if(voiceOn){
-    voiceOn=false;
+  if(Date.now()-replayGuardAt<900) return;                   // 这一下刚用来补播语音了，不当切换
+  if(recCtx){
+    if(recCtx.state==="suspended"){ unlockAudio(); return; } // 还没解锁：这一下只用来开始收音
+    stopRec(false);                                          // 说完了 -> 把录到的内容发给小暖
+    return;
+  }
+  if(busy || curAudio){                                      // 小暖在说/在想 -> 打断，然后听您说
+    interruptSpeak();
+    if(abortCtl) abortCtl.abort();
+    setVS("idle","您说，我听着");
+    if(voiceOn) scheduleListen();
+    return;
+  }
+  if(paused){ paused=false; pauseBtn.textContent="暂停语音"; }
+  if(voiceOn){ turnVoiceOff(); return; }                     // 空闲 -> 关掉语音
+  voiceOn=true; setMicUI(); startRec();                      // 关 -> 开始听
+}
+/* 暂停语音 / 继续语音：停下来不发送，也不说话 */
+function pauseVoice(){
+  if(!paused){
+    paused=true; voiceOn=false;
     if(abortCtl) abortCtl.abort();
     stopRec(true);
     interruptSpeak();
     clearTimeout(hfTimer);
+    blockedText="";
     setSubtitle("","");
+    pauseBtn.textContent="继续语音";
     setMicUI();
-    setVS("idle");
-    return;
+    setVS("idle","已暂停 · 点“继续语音”接着聊");
+  }else{
+    paused=false; voiceOn=true;
+    pauseBtn.textContent="暂停语音";
+    setMicUI();
+    startRec();
   }
-  voiceOn=true; setMicUI();
-  startRec();
+}
+/* 关掉语音（大话筒空闲时点一下） */
+function turnVoiceOff(){
+  voiceOn=false; paused=false;
+  pauseBtn.textContent="暂停语音";
+  if(abortCtl) abortCtl.abort();
+  stopRec(true);
+  interruptSpeak();
+  clearTimeout(hfTimer);
+  blockedText="";
+  setSubtitle("","");
+  setMicUI();
+  setVS("idle");
+}
+/* 浏览器要过用户手势才让 AudioContext 收音：点一下屏幕解锁 */
+function unlockAudio(){
+  if(!recCtx || recCtx.state!=="suspended") return;
+  unlockTries++; const tries=unlockTries;
+  recCtx.resume().then(()=>{
+    if(!recCtx) return;
+    if(recCtx.state!=="running"){ if(tries>=3) failMic("麦克风启动不了，请再点一下话筒"); return; }
+    recBuf=[]; recFrames=0; speechSeen=false; silenceMs=0;
+    setVS("listen"); setMicUI(); armRecTimer(); armFrameWatch();
+  }).catch(()=>{ if(tries>=3) failMic("麦克风启动不了，请再点一下话筒"); });
+}
+/* 麦克风实在起不来：降级成可再次点开的普通状态，别把老人卡死 */
+function failMic(msg){
+  stopRec(true);
+  voiceOn=false; paused=false;
+  pauseBtn.textContent="暂停语音";
+  setSubtitle("","");
+  setMicUI();
+  setVS("idle",msg);
+  toast(msg);
 }
 
 /* ================= 逐句 TTS 播报（预取 + 可打断） ================= */
@@ -626,24 +697,13 @@ async function streamSend(extra){
   else { setVS("idle","刚才没连上，您再说一遍试试"); if(voiceOn) scheduleListen(); }
 }
 
-/* ================= 首次触摸解锁音频（浏览器自动播放限制） ================= */
+/* ================= 点屏幕：解锁收音 / 补播被拦的语音 ================= */
 document.addEventListener("pointerdown", ()=>{
-  let used=false;
-  if(recCtx && recCtx.state==="suspended"){
-    used=true;
-    recCtx.resume().then(()=>{
-      if(!recCtx) return;
-      recBuf=[]; recFrames=0; speechSeen=false; silenceMs=0;
-      setVS("listen");
-      setMicUI();
-      armRecTimer(); armFrameWatch();
-    }).catch(()=>{});
-  }
-  if(blockedText){ used=true; const t=blockedText; blockedText=""; speakReply(t); }
-  if(used) gestureUsedAt=Date.now();
+  if(recCtx && recCtx.state==="suspended") unlockAudio();
+  if(blockedText){ const t=blockedText; blockedText=""; replayGuardAt=Date.now(); speakReply(t); }
 },{capture:true});
 /* 排障用：控制台输入 __xn.state() 看麦克风实时状态 */
-window.__xn={state:()=>({voiceOn, busy, recording:!!recCtx, ctxState:recCtx?recCtx.state:"-", frames:recFrames,
+window.__xn={state:()=>({voiceOn, paused, busy, recording:!!recCtx, ctxState:recCtx?recCtx.state:"-", frames:recFrames,
   bufferedSec:recBuf.reduce((n,c)=>n+c.length,0)/(recCtx?recCtx.sampleRate:1)})};
 
 /* ================= 启动：加载中模态框（只有慢/失败才出现） -> 就绪直接进聊天 ================= */

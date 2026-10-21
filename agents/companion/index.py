@@ -45,10 +45,10 @@ async def handler(ctx):
         from_audio = True
         message = await transcribe(ctx.env, audio_b64, mime)
         if not message:
-            return {"error": "语音没听清，麻烦再说一遍，或者用下面的输入框打字"}, 422
+            return {"error": "语音没听清，麻烦再讲一遍"}, 422
 
     if not message:
-        return {"error": "请说话或在输入框输入内容"}, 400
+        return {"error": "请对着话筒说话"}, 400
 
     heard = message                      # asr 回显用原文（含称呼，老人看着自然）
     cleaned = _WAKE_RE.sub("", message).strip()
@@ -67,12 +67,13 @@ async def handler(ctx):
     thread_id = ctx.conversation_id or f"t-{uuid.uuid4().hex}"
 
     async def gen():
-        try:
-            if from_audio:
-                yield ctx.utils.sse({"type": "asr", "content": heard})
+        if from_audio:
+            yield ctx.utils.sse({"type": "asr", "content": heard})
+
+        async def stream_graph(tid: str):
             async for mode_ in graph.astream(
                 {"messages": [HumanMessage(content=message)], "patient": patient, **({"mode": mode} if mode in ("pre", "post") else {})},
-                config={"configurable": {"thread_id": thread_id}},
+                config={"configurable": {"thread_id": tid}},
                 stream_mode=["updates", "messages"],
             ):
                 if ctx.request.signal.is_set():
@@ -96,9 +97,26 @@ async def handler(ctx):
                     content = msg.content if isinstance(msg.content, str) else json.dumps(msg.content, ensure_ascii=False)
                     if content.strip():
                         yield ctx.utils.sse({"type": "ai_response", "content": content})
+
+        got = False
+        try:
+            async for chunk in stream_graph(thread_id):
+                got = True
+                yield chunk
         except Exception as e:
-            if not ctx.request.signal.is_set():
+            if ctx.request.signal.is_set():
+                pass
+            elif got:
+                # 中途才出错：直接告诉老人出了小状况
                 yield ctx.utils.sse({"type": "error_message", "content": f"哎呀，小暖这边出了点小状况：{e}"})
+            else:
+                # 部署更新或请求中断会让旧会话的 checkpoint 失配（pending writes corrupt/incompatible），
+                # 换一个全新 thread 重试一次：牺牲旧上下文换可用性
+                try:
+                    async for chunk in stream_graph(f"{thread_id}-r{uuid.uuid4().hex[:6]}"):
+                        yield chunk
+                except Exception as e2:
+                    yield ctx.utils.sse({"type": "error_message", "content": f"哎呀，小暖这边出了点小状况：{e2}"})
         yield ctx.utils.sse({"type": "ping", "ts": int(time.time() * 1000)})
         yield b"data: [DONE]\n\n"
 
