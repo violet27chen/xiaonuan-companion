@@ -12,6 +12,9 @@ from ._llm import get_model
 
 MAX_INTERVIEW_TURNS = 8  # 追问轮数上限，防止无限循环
 
+# 回复会被直接合成语音念给老人听：不能带舞台提示，长短要克制
+VOICE_RULE = "【口播规矩】你的回复会被直接念出来：只说要出口的话，不要语气提示、舞台指示（如（轻柔地））、动作描写；一般一两个短句说完。"
+
 INTERVIEW_KEYS = ["主诉", "起病时间", "症状变化", "加重或缓解因素", "伴随症状", "既往病史", "在服药物", "药物过敏", "近期检查"]
 
 # ---------------- 档案文本化 ----------------
@@ -103,7 +106,8 @@ async def pre_node(state: CompanionState, env: dict):
         "【已收集信息】" + (collected_txt if collected_txt != "{}" else "（还没有）") + "\n"
         "【老人档案】\n" + patient_block(state.get("patient") or {}) + "\n"
         f"【本轮是第{turns}轮】综合历史信息和老人的最新讲述，提取新增信息；"
-        "判断还缺哪些关键字段：还缺就追问（done=false），信息够（或已到轮数上限）就 done=true。"
+        "判断还缺哪些关键字段：还缺就追问（done=false），信息够（或已到轮数上限）就 done=true。\n"
+        + VOICE_RULE
     )
     last_text = state["messages"][-1].content
     out = await get_model(env, 0.4).with_structured_output(InterviewOut).ainvoke(
@@ -165,7 +169,7 @@ async def post_node(state: CompanionState, env: dict):
         "bring 要带的东西[], notes 备注}，没有复诊安排就是空 dict。\n"
         "reply 用大白话跟老人确认并概括安排，温暖短句。\n"
         "【安全红线】只整理医生原话，不加自己的医疗建议、不改剂量。\n"
-        "【老人档案】\n" + patient_block(state.get("patient") or {})
+        "【老人档案】\n" + patient_block(state.get("patient") or {}) + "\n" + VOICE_RULE
     )
     last_text = state["messages"][-1].content
     out = await get_model(env, 0.2).with_structured_output(PostOut).ainvoke(
@@ -181,7 +185,7 @@ async def archive_node(state: CompanionState, env: dict):
         "你是 AI 陪诊员「小暖」，老人或家属在问健康相关的问题。请根据【老人档案】回答。\n"
         "【规矩】大白话、短句；只解释常识和档案里已有的安排（比如『今天该吃什么药』）；"
         "不做诊断、不开药、不改剂量；问题复杂或紧急时建议去医院；语气像晚辈，温暖。\n"
-        "【老人档案】\n" + patient_block(state.get("patient") or {})
+        "【老人档案】\n" + patient_block(state.get("patient") or {}) + "\n" + VOICE_RULE
     )
     msgs = [{"role": "system", "content": sys}] + [
         {"role": "user" if m.type == "human" else "assistant", "content": str(m.content)}

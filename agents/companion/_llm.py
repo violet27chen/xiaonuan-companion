@@ -12,7 +12,7 @@ def get_model(env: dict, temperature: float = 0.3) -> ChatOpenAI:
         raise RuntimeError("缺少 AI_GATEWAY_API_KEY / AI_GATEWAY_BASE_URL 环境变量")
     key = (base_url, temperature)
     if key not in _model_cache:
-        _model_cache[key] = ChatOpenAI(
+        common = dict(
             model=env.get("AI_GATEWAY_MODEL") or DEFAULT_MODEL,
             api_key=api_key,
             base_url=base_url,
@@ -20,4 +20,9 @@ def get_model(env: dict, temperature: float = 0.3) -> ChatOpenAI:
             timeout=120,
             streaming=False,
         )
+        try:
+            # 关闭推理思考：首字延迟约减半（语音对话等不起）；老版本不支持该字段时退回默认
+            _model_cache[key] = ChatOpenAI(**common, model_kwargs={"reasoning_effort": "none"})
+        except Exception:
+            _model_cache[key] = ChatOpenAI(**common)
     return _model_cache[key]

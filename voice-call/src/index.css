@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f6f1e7;
+  overscroll-behavior: none;
+}
+
+/* ---------- 陪诊小暖 · 人物形象 ---------- */
+.companion {
+  position: relative;
+  width: 56vmin;
+  aspect-ratio: 236 / 212;
+  display: grid;
+  place-items: center;
+}
+.companion .ring {
+  position: absolute;
+  width: 83%;
+  aspect-ratio: 1;
+  border: 1.5px solid rgba(240, 161, 132, 0.55);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+.companion.listening .ring {
+  animation: companion-rip 2.2s ease-out infinite;
+}
+.companion .ring.r2 {
+  animation-delay: 0.73s;
+}
+.companion .ring.r3 {
+  animation-delay: 1.47s;
+}
+@keyframes companion-rip {
+  0% {
+    transform: scale(0.86);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}
+.companion .ip {
+  width: 82%;
+  position: relative;
+  z-index: 1;
+  animation: companion-breathe 3.4s ease-in-out infinite;
+}
+@keyframes companion-breathe {
+  50% {
+    transform: translateY(5px);
+  }
+}
+.companion .eyes {
+  transition: transform 0.25s;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.companion.listening .eyes {
+  transform: scale(1.15);
+}
+.companion .eye {
+  animation: companion-blink 4.6s infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes companion-blink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.12);
+  }
+}
+.companion .mouth-talk {
+  display: none;
+}
+.companion.talking .mouth-smile {
+  display: none;
+}
+.companion.talking .mouth-talk {
+  display: block;
+  animation: companion-talk 0.34s ease-in-out infinite alternate;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes companion-talk {
+  from {
+    transform: scaleY(0.3);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+.companion.talking .bodyG {
+  animation: companion-bob 0.55s ease-in-out infinite alternate;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes companion-bob {
+  to {
+    transform: translateY(-4px);
+  }
+}
