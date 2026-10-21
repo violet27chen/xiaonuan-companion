@@ -12,6 +12,22 @@ body {
   overscroll-behavior: none;
 }
 
+/* 思考中：轻轻浮动，提醒老人小暖在想事情 */
+.think-float {
+  animation: think-float 1.6s ease-in-out infinite;
+}
+@keyframes think-float {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
 /* ---------- 陪诊小暖 · 人物形象 ---------- */
 .companion {
   position: relative;

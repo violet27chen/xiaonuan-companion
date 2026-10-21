@@ -18,7 +18,7 @@ import android.webkit.WebViewClient;
  */
 public class MainActivity extends Activity {
 
-    private static final String SITE = "https://tea-buddy-mija6evs.edgeone.dev";
+    private static final String SITE = "https://xiaonuan.27c.site";
     private static final int REQ_MIC = 1;
 
     private WebView wv;

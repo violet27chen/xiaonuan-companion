@@ -8,8 +8,6 @@ import {
   stopWav,
   speakWithVoice,
   stopVoice,
-  playAck,
-  stopAck,
   demoReply,
   sleep,
 } from "../lib/ai.js";
@@ -61,7 +59,6 @@ export function useConversation() {
   const graphReadyRef = useRef(false);
   const startingRef = useRef(false);
   const startedRef = useRef(false);
-  const ackTokenRef = useRef(0); // 口头禅回合令牌：真回复/打断出现即作废
 
   /* ================= 启动：能力探测，决定 live / demo ================= */
   useEffect(() => {
@@ -204,21 +201,6 @@ export function useConversation() {
   }
 
   /* ================= 发送 → 回复 → 流式逐句播报 ================= */
-  /** ASR 出结果后立刻放思考口头禅，填补等回复的空档 */
-  function startAck() {
-    if (demoRef.current) return;
-    const my = ++ackTokenRef.current;
-    playAck().then((started) => {
-      if (my !== ackTokenRef.current && started) stopAck(); // 已被真回复/打断取代
-    });
-  }
-
-  /** 作废口头禅：真回复开播 / 被打断 / 流结束 */
-  function cancelAck() {
-    ackTokenRef.current += 1;
-    stopAck();
-  }
-
   async function sendTurn(b64) {
     const token = ++turnRef.current;
     busyRef.current = true;
@@ -259,7 +241,6 @@ export function useConversation() {
           onAsr: (t) => {
             if (token === turnRef.current) {
               setSubtitle({ who: "您", text: t });
-              startAck();
             }
           },
           onText,
@@ -281,34 +262,43 @@ export function useConversation() {
     await player;
   }
 
-  /** 流式播报：句子随到随播；首句到手才从"思考中"切到播报态 */
+  /** 流式播报：句子随到随播；要说话了字幕才出现（与语音同步），首句开播才从"思考中"切到播报态 */
   async function speakStream(sents, token, isDone) {
     let i = 0;
     let started = false;
     while (token === turnRef.current) {
       if (i >= sents.length) {
-        if (isDone()) {
-          cancelAck(); // 流结束（含无回复）：收掉可能还在放的口头禅
-          break;
-        }
+        if (isDone()) break; // 流结束（含无回复）
         await sleep(50);
         continue;
       }
       const sent = sents[i++];
-      if (!started) {
-        started = true;
-        setPhase("speak");
-        cancelAck(); // 真回复开播，撤掉思考口头禅
-      }
-      setSubtitle({ who: "小暖", text: sent });
       if (demoRef.current) {
+        if (!started) {
+          started = true;
+          setPhase("speak");
+        }
+        setSubtitle({ who: "小暖", text: sent });
         await speakWithVoice(sent);
       } else {
-        let played = false;
+        // 先合成音频：合成好、即将发声的那一刻才上字幕，杜绝"文字先站一会儿才开口"
+        let b64 = null;
         try {
-          if (i < sents.length) ttsWav(sents[i]).catch(() => {}); // 预取下一句
-          played = (await playWav(await ttsWav(sent))) === "ended";
+          b64 = await ttsWav(sent);
         } catch {}
+        if (token !== turnRef.current) return;
+        if (i < sents.length) ttsWav(sents[i]).catch(() => {}); // 预取下一句
+        if (!started) {
+          started = true;
+          setPhase("speak");
+        }
+        setSubtitle({ who: "小暖", text: sent });
+        let played = false;
+        if (b64) {
+          try {
+            played = (await playWav(b64)) === "ended";
+          } catch {}
+        }
         if (token !== turnRef.current) return;
         if (!played) await speakWithVoice(sent); // 自动播放被拦/TTS 失败 → 语音合成兜底
       }
@@ -328,7 +318,6 @@ export function useConversation() {
   function interruptTurn() {
     turnRef.current += 1; // 旧回合全部作废
     busyRef.current = false;
-    cancelAck();
     if (abortRef.current) {
       try {
         abortRef.current.abort();

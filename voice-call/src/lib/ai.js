@@ -8,6 +8,8 @@
  * - demoReply        演示模式预置回复（服务不可达时保证回路可演示）
  */
 
+import { getToken, getUser, notifyAuthLost } from "./auth.js";
+
 const API = "/companion";
 
 let cid =
@@ -19,12 +21,28 @@ let cid =
   })();
 
 function post(body, signal) {
+  const user = getUser();
+  const token = getToken();
+  if (token) body.token = token;
   return fetch(API, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "makers-conversation-id": cid },
+    headers: {
+      "Content-Type": "application/json",
+      // 登录后按用户隔离会话线：多人共用一台设备，记忆和对话也不串
+      "makers-conversation-id": user ? "u-" + user : cid,
+    },
     body: JSON.stringify(body),
     signal,
   });
+}
+
+/** 令牌失效（过期/被顶掉）：清登录态，界面自动退回登录页 */
+function checkAuth(resp) {
+  if (resp.status === 401) {
+    notifyAuthLost();
+    return true;
+  }
+  return false;
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -60,7 +78,10 @@ function profileFromStorage() {
 /** 发送一段语音，流式收取回复；onAsr 回调语音识别文本，onText 增量回调回复片段 */
 export async function askLive(b64, { onAsr, onText, signal } = {}) {
   const resp = await post({ audio: b64, mime: "audio/wav", profile: profileFromStorage() }, signal);
-  if (!resp.ok) throw new Error("http " + resp.status);
+  if (!resp.ok) {
+    if (checkAuth(resp)) throw new Error("登录过期了，请重新登录");
+    throw new Error("http " + resp.status);
+  }
   const reader = resp.body.getReader();
   const dec = new TextDecoder();
   let buf = "";
@@ -102,7 +123,10 @@ export function ttsWav(text, signal) {
   if (hit) return hit;
   const p = (async () => {
     const r = await post({ action: "tts", text }, signal);
-    if (!r.ok) throw new Error("tts " + r.status);
+    if (!r.ok) {
+      checkAuth(r);
+      throw new Error("tts " + r.status);
+    }
     const j = await r.json();
     if (!j.audio) throw new Error("no audio");
     return j.audio;
@@ -181,40 +205,6 @@ export function speakWithVoice(text) {
 
 export function stopVoice() {
   if (window.speechSynthesis) window.speechSynthesis.cancel();
-}
-
-/* ---------- 思考口头禅：ASR 一出来就播放，掩盖 LLM+TTS 耗时 ---------- */
-let ackB64 = null;
-let ackAudio = null;
-
-export function playAck() {
-  return (async () => {
-    try {
-      if (!ackB64) {
-        const r = await fetch("/ack.wav");
-        if (!r.ok) return false;
-        const bytes = new Uint8Array(await r.arrayBuffer());
-        let bin = "";
-        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-        ackB64 = btoa(bin);
-      }
-      const a = new Audio("data:audio/wav;base64," + ackB64);
-      ackAudio = a;
-      await a.play();
-      return true;
-    } catch {
-      return false;
-    }
-  })();
-}
-
-export function stopAck() {
-  if (ackAudio) {
-    try {
-      ackAudio.pause();
-    } catch {}
-    ackAudio = null;
-  }
 }
 
 /* ---------- 演示模式预置回复（陪诊情景，轮换） ---------- */

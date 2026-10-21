@@ -10,7 +10,7 @@ export default defineConfig({
     proxy: {
       // 后端 LangGraph agent（EdgeOne 海外免备案区）；开发期走代理规避跨域
       "/companion": {
-        target: "https://tea-buddy-mija6evs.edgeone.dev",
+        target: "https://xiaonuan.27c.site",
         changeOrigin: true,
       },
     },

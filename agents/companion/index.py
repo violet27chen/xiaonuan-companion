@@ -1,4 +1,4 @@
-# 陪诊小暖 入口：SSE 流式（文本回复 + 结构化卡片 + 语音）
+# 陪诊小暖 入口：SSE 流式（文本回复 + 结构化卡片 + 语音）+ 用户系统
 import json
 import re
 import time
@@ -6,6 +6,7 @@ import uuid
 
 from langchain_core.messages import HumanMessage
 
+from . import _users
 from ._graph import build_graph
 from ._speech import speech_available, synthesize, transcribe
 
@@ -18,12 +19,43 @@ _WAKE_RE = re.compile(r"^(?:喂|嘿|哎|你好|您好|哈喽)*(?:小暖|暖暖|�
 async def handler(ctx):
     body = ctx.request.body or {}
     action = body.get("action") or ctx.request.query.get("action") or ""
+    token = (body.get("token") or "").strip()
 
-    # ---- 能力探测：前端据此决定是否显示录音/朗读按钮 ----
+    # ---- 能力探测：前端据此决定是否降级演示模式（无需登录）----
     if action == "caps":
         return {"asr": speech_available(ctx.env), "tts": speech_available(ctx.env)}
 
-    # ---- 单独 TTS：把一段文字念出来（卡片上的喇叭按钮） ----
+    # ---- 注册 / 登录 / 退出 ----
+    if action == "register":
+        username = (body.get("username") or "").strip()
+        tok, err = await _users.register(ctx, username, body.get("password") or "")
+        if err:
+            return {"error": err}, 400
+        return {"token": tok, "username": username}
+
+    if action == "login":
+        username = (body.get("username") or "").strip()
+        tok, err = await _users.login(ctx, username, body.get("password") or "")
+        if err:
+            return {"error": err}, 400
+        return {"token": tok, "username": username}
+
+    if action == "logout":
+        await _users.logout(ctx, token)
+        return {"ok": True}
+
+    # ---- 以下全部要求登录：数据按用户彻底隔离，多人共用不串号 ----
+    username = await _users.username_of(ctx, token)
+    if not username:
+        return {"error": "请先登录"}, 401
+
+    # ---- 记忆面板：查看小暖保存的记忆 ----
+    if action == "memory":
+        mem = await _users.load_memory(ctx, username)
+        mem["username"] = username
+        return mem
+
+    # ---- 单独 TTS：把一段文字念出来（逐句预取合成用）----
     if action == "tts":
         text = (body.get("text") or "").strip()
         if not text:
@@ -39,7 +71,7 @@ async def handler(ctx):
     mode = (body.get("mode") or "").strip()  # 前端按钮显式指定 pre/post
     profile = body.get("profile") or {}
 
-    # ---- 语音输入：录音转写（失败降级提示） ----
+    # ---- 语音输入：录音转写（失败降级提示）----
     from_audio = False
     if not message and audio_b64:
         from_audio = True
@@ -64,39 +96,49 @@ async def handler(ctx):
 
     checkpointer = getattr(ctx.store, "langgraph_checkpointer", None) if ctx.store else None
     graph = build_graph(ctx.env, checkpointer=checkpointer)
-    thread_id = ctx.conversation_id or f"t-{uuid.uuid4().hex}"
+    # 每个用户一条独立会话线：对话历史、问诊进度、记忆互不串扰
+    thread_id = f"u-{_users._uid(username)}"
 
     async def gen():
         if from_audio:
             yield ctx.utils.sse({"type": "asr", "content": heard})
 
+        collected = []   # 本轮 AI 回复原文（记忆用）
+        cards_seen = []  # 本轮生成的卡片
+        interview_seen = None
+
         async def stream_graph(tid: str):
-            async for mode_ in graph.astream(
-                {"messages": [HumanMessage(content=message)], "patient": patient, **({"mode": mode} if mode in ("pre", "post") else {})},
+            nonlocal interview_seen
+            # 只用 updates 模式：每条 AI 消息随所属节点完成恰好出现一次。
+            # （messages 模式配非流式模型会把同一句话重复吐出来，导致一句话播两遍）
+            async for payload in graph.astream(
+                {
+                    "messages": [HumanMessage(content=message)],
+                    "patient": patient,
+                    **({"mode": mode} if mode in ("pre", "post") else {}),
+                },
                 config={"configurable": {"thread_id": tid}},
-                stream_mode=["updates", "messages"],
+                stream_mode="updates",
             ):
                 if ctx.request.signal.is_set():
                     break
-                kind, payload = mode_
-                if kind == "updates":
-                    for node, delta in (payload or {}).items():
-                        if not delta:
+                for node, delta in (payload or {}).items():
+                    if not delta:
+                        continue
+                    card = delta.get("result_card")
+                    if card:
+                        cards_seen.append(card)
+                        yield ctx.utils.sse({"type": "card", "node": node, "data": card})
+                    iv = delta.get("interview")
+                    if iv:
+                        interview_seen = iv
+                    for m in (delta.get("messages") or []):
+                        if getattr(m, "type", "") != "ai" or getattr(m, "tool_calls", None):
                             continue
-                        card = delta.get("result_card")
-                        if card:
-                            yield ctx.utils.sse({"type": "card", "node": node, "data": card})
-                elif kind == "messages":
-                    msg = payload[0] if isinstance(payload, tuple) else payload
-                    if msg is None or not getattr(msg, "content", ""):
-                        continue
-                    if getattr(msg, "type", "") != "ai":
-                        continue
-                    if msg.tool_calls:
-                        continue
-                    content = msg.content if isinstance(msg.content, str) else json.dumps(msg.content, ensure_ascii=False)
-                    if content.strip():
-                        yield ctx.utils.sse({"type": "ai_response", "content": content})
+                        content = m.content if isinstance(m.content, str) else json.dumps(m.content, ensure_ascii=False)
+                        if content.strip():
+                            collected.append(content)
+                            yield ctx.utils.sse({"type": "ai_response", "content": content})
 
         got = False
         try:
@@ -112,11 +154,27 @@ async def handler(ctx):
             else:
                 # 部署更新或请求中断会让旧会话的 checkpoint 失配（pending writes corrupt/incompatible），
                 # 换一个全新 thread 重试一次：牺牲旧上下文换可用性
+                collected.clear()
+                cards_seen.clear()
+                interview_seen = None
                 try:
                     async for chunk in stream_graph(f"{thread_id}-r{uuid.uuid4().hex[:6]}"):
                         yield chunk
                 except Exception as e2:
                     yield ctx.utils.sse({"type": "error_message", "content": f"哎呀，小暖这边出了点小状况：{e2}"})
+
+        # 落记忆：档案 / 问诊进度 / 生成的卡片 / 最近的对话
+        reply = "".join(collected).strip()
+        if reply and not ctx.request.signal.is_set():
+            await _users.save_memory(
+                ctx,
+                username,
+                profile=patient,
+                interview=interview_seen,
+                cards=cards_seen,
+                heard=heard,
+                reply=reply,
+            )
         yield ctx.utils.sse({"type": "ping", "ts": int(time.time() * 1000)})
         yield b"data: [DONE]\n\n"
 
