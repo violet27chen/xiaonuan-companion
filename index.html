@@ -44,11 +44,8 @@
     background:var(--surface);border:1px solid var(--border);border-radius:999px;
     font-size:15px;font-weight:500;color:var(--text)}
   .profile-btn:active{background:var(--active)}
-  .icon-btn{width:44px;height:44px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
-    background:var(--surface);border:1px solid var(--border);border-radius:999px;color:var(--text)}
-  .icon-btn:active{background:var(--active)}
 
-  /* ---------- 语音视图（默认） ---------- */
+  /* ---------- 语音视图（唯一视图） ---------- */
   #voiceView{display:flex;flex-direction:column;overflow:hidden}
   .stage{flex:none;display:flex;flex-direction:column;align-items:center;padding:18px 16px 4px}
   .ip-wrap{position:relative;width:min(260px,62vw);aspect-ratio:236/212;display:grid;place-items:center;
@@ -76,10 +73,6 @@
   @keyframes bob{to{transform:translateY(-4px)}}
   .status{font-size:18px;font-weight:500;text-align:center;min-height:1.6em;margin-top:8px}
   .status.dim{color:var(--muted);font-weight:400}
-  .vchips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px;padding:0 12px}
-  .vchip{border:1px solid var(--border);background:var(--surface);border-radius:999px;
-    padding:10px 16px;font-size:16px;color:var(--text)}
-  .vchip:active{background:var(--active)}
   .caps{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:10px 18px 4px}
   .cwrap{max-width:680px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;justify-content:flex-end;gap:14px}
   #capList{display:flex;flex-direction:column;gap:14px}
@@ -91,62 +84,25 @@
     padding:10px 0 8px;color:var(--muted);font-size:13px}
   .pin svg{flex-shrink:0}
 
-  /* ---------- 语音底部（大话筒） ---------- */
+  /* ---------- 语音底部（大话筒 = 语音开关） ---------- */
   footer.voice{display:flex;flex-direction:column;align-items:center;gap:9px;
     padding:14px 16px calc(12px + env(safe-area-inset-bottom))}
+  .subtitle{width:100%;max-width:680px;min-height:3.2em;display:flex;align-items:center;justify-content:center;
+    text-align:center;font-size:19px;font-weight:500;line-height:1.5;padding:0 6px}
+  .subtitle:empty{min-height:0}
+  .subtitle .sw{font-size:14px;color:var(--muted);margin-right:8px;flex-shrink:0}
   #bigMic{width:78px;height:78px;border-radius:999px;border:none;background:var(--accent);color:#fff;
     display:flex;align-items:center;justify-content:center;flex-shrink:0}
   #bigMic:active{background:var(--accent-deep)}
   #bigMic.rec{background:var(--negative);animation:pulse 1.1s infinite}
+  #bigMic.off{background:var(--surface);color:var(--muted);border:1px solid var(--border)}
+  #bigMic.off:active{background:var(--active)}
   @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
-  .hint{font-size:13px;color:var(--muted);text-align:center}
-  .hf{border:none;background:none;color:var(--muted);font-size:13px;
-    text-decoration:underline;text-underline-offset:3px;padding:0}
-
-  /* ---------- 白纸消息区（文字模式） ---------- */
-  .sheet{margin:0 auto;width:min(1000px,calc(100% - 16px));background:var(--surface);border:1px solid var(--border);
-    border-radius:var(--radius-sheet);overflow-y:auto;overscroll-behavior:contain}
-  .wrap{max-width:680px;margin:0 auto;padding:20px 18px 0;min-height:100%;
-    display:flex;flex-direction:column}
-  #list{display:flex;flex-direction:column;gap:14px;padding-bottom:12px}
-  .wrap .pin{margin-top:auto}
-  @media (max-width:560px){
-    header{width:100%}
-    .sheet{width:100%;border-radius:0;border-left:none;border-right:none}
-  }
-
-  /* 欢迎区 */
-  .intro h2{font-size:22px;font-weight:600;letter-spacing:-.01em;line-height:1.3}
-  .intro p{font-size:16px;color:var(--muted);margin-top:6px;max-width:34em}
-  /* 功能入口：两行列表行（非卡片） */
-  .entries{margin-top:14px}
-  .entry{display:flex;align-items:center;gap:14px;width:100%;text-align:left;
-    background:none;border:none;border-top:1px solid var(--rule);padding:14px 2px}
-  .entry:first-child{border-top:none}
-  .entry .eic{flex-shrink:0;color:var(--accent)}
-  .entry .etx{flex:1;min-width:0}
-  .entry .en{font-size:17px;font-weight:600}
-  .entry .ed{font-size:14px;color:var(--muted);margin-top:2px;line-height:1.45}
-  .entry .ear{color:var(--muted);flex-shrink:0}
-  .entry:active{background:var(--raised)}
-
-  /* 消息 */
-  .row{display:flex;gap:9px;align-items:flex-start}
-  .row.user{flex-direction:row-reverse}
-  .row .who{flex-shrink:0;display:flex;align-items:center;justify-content:center;
-    width:24px;height:24px;margin-top:14px;color:var(--accent)}
-  .row.user .who{color:var(--muted)}
-  .bubble{max-width:calc(100% - 42px);padding:12px 15px;border-radius:14px;
-    font-size:18px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
-  .bot .bubble{background:var(--raised);border-bottom-left-radius:5px}
-  .user .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:5px}
-  .cursor{display:inline-block;width:3px;height:1.05em;background:var(--accent);
-    vertical-align:-2px;margin-left:2px;animation:bl .9s steps(1) infinite}
-  @keyframes bl{50%{opacity:0}}
-  .sysline{font-size:13px;color:var(--muted);text-align:center;padding:2px 0}
+  .hint{font-size:14px;color:var(--muted);text-align:center}
+  .safety{font-size:12px;color:var(--muted);text-align:center}
 
   /* ---------- 结构化卡片 ---------- */
-  .card{max-width:calc(100% - 42px);margin-left:33px;border:1px solid var(--border);
+  .card{max-width:100%;border:1px solid var(--border);
     border-radius:var(--radius-card);overflow:hidden}
   .card-head{display:flex;align-items:baseline;gap:10px;padding:12px 16px 10px;border-bottom:1px solid var(--rule)}
   .card-head .cht{font-size:17px;font-weight:600}
@@ -182,28 +138,6 @@
   .card-ops button:active{background:var(--accent-wash)}
   .card-ops button:disabled{color:var(--muted)}
 
-  /* ---------- 底部（文字模式 chrome） ---------- */
-  footer.text{padding:12px 16px calc(10px + env(safe-area-inset-bottom))}
-  .fwrap{max-width:680px;margin:0 auto}
-  .quick{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-  .qchip{border:1px solid var(--border);background:var(--surface);border-radius:999px;
-    padding:8px 15px;font-size:15px;color:var(--text)}
-  .qchip:active{background:var(--active)}
-  .frow{display:flex;gap:10px;align-items:flex-end}
-  #mic{width:56px;height:56px;border-radius:999px;border:none;background:var(--accent);color:#fff;
-    display:flex;align-items:center;justify-content:center;flex-shrink:0}
-  #mic:active{background:var(--accent-deep)}
-  #mic.rec{background:var(--negative);animation:pulse 1.1s infinite}
-  #txt{flex:1;min-width:0;border:1px solid var(--border);border-radius:var(--radius-ctl);
-    padding:15px 16px;font-size:18px;font-family:inherit;outline:none;background:var(--surface);
-    resize:none;height:56px}
-  #txt:focus{border-color:var(--accent)}
-  #send{height:56px;padding:0 22px;border-radius:var(--radius-ctl);border:none;
-    background:var(--accent);color:var(--surface);font-size:16px;font-weight:600;flex-shrink:0}
-  #send:active{background:var(--accent-deep)}
-  #send:disabled{opacity:.55}
-  .safety{font-size:12px;color:var(--muted);text-align:center;margin-top:9px}
-
   /* ---------- 档案抽屉 ---------- */
   #drawer{position:fixed;inset:0;background:rgba(28,26,23,.44);z-index:50;display:none}
   #drawer.open{display:block}
@@ -222,6 +156,20 @@
   .sheet-ops button{flex:1;height:48px;border-radius:var(--radius-ctl);border:none;
     font-size:16px;font-weight:600;background:var(--accent);color:#fff}
   .sheet-ops #closeP{background:var(--surface);border:1px solid var(--border);color:var(--text)}
+
+  /* ---------- 启动模态框（加载中 / 点我开始） ---------- */
+  #boot{position:fixed;inset:0;background:var(--ground);z-index:100;
+    display:flex;align-items:center;justify-content:center;transition:opacity .25s}
+  #boot.hide{opacity:0;pointer-events:none}
+  .boot-card{display:flex;flex-direction:column;align-items:center;gap:5px;
+    padding:36px 46px;background:var(--surface);border:1px solid var(--border);
+    border-radius:20px;box-shadow:0 10px 30px rgba(28,26,23,.08);text-align:center;max-width:86vw}
+  .boot-face{animation:breathe 3.4s ease-in-out infinite}
+  #boot .bt{font-size:21px;font-weight:600;margin-top:10px;line-height:1.4}
+  #boot .bs{font-size:15px;color:var(--muted);line-height:1.5}
+  .boot-retry{margin-top:14px;height:46px;padding:0 28px;border:none;border-radius:999px;
+    background:var(--accent);color:#fff;font-size:16px;font-weight:600;font-family:inherit}
+  .boot-retry:active{background:var(--accent-deep)}
 
   #toast{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:99;
     background:var(--text);color:var(--surface);font-size:15px;border-radius:999px;
@@ -242,10 +190,9 @@
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6a1 1 0 0 1 1 1v2H8V4a1 1 0 0 1 1-1z"/><rect x="5" y="6" width="14" height="15" rx="2"/><path d="M9 12h6M9 16h6"/></svg>
     健康档案
   </button>
-  <button class="icon-btn" id="modeBtn" onclick="toggleView()" aria-label="切换打字模式"></button>
 </header>
 
-<!-- ============ 语音视图（默认） ============ -->
+<!-- ============ 语音视图（唯一） ============ -->
 <main id="voiceView">
   <div class="stage">
     <div class="ip-wrap" id="ipWrap">
@@ -270,7 +217,6 @@
       </svg>
     </div>
     <div class="status" id="status"></div>
-    <div class="vchips" id="vchips"></div>
   </div>
   <div class="caps" id="capScrollBox">
     <div class="cwrap">
@@ -283,41 +229,14 @@
   </div>
 </main>
 
-<!-- ============ 文字视图 ============ -->
-<main id="textView" style="display:none">
-  <div class="sheet" id="chat">
-    <div class="wrap">
-      <div id="list"></div>
-      <div class="pin" aria-hidden="true">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-        对话和健康档案只保存在这台手机里，不会上传云端
-      </div>
-    </div>
-  </div>
-</main>
-
-<!-- ============ 语音底部 ============ -->
+<!-- ============ 语音底部：字幕 + 大话筒 ============ -->
 <footer class="voice" id="vFoot">
-  <button id="bigMic" onclick="bigMic()" aria-label="按一下说话">
+  <div class="subtitle" id="subtitle" aria-live="polite"></div>
+  <button id="bigMic" class="off" onclick="bigMic()" aria-label="打开或关闭语音">
     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
   </button>
-  <div class="hint" id="hint">说完停一停，我会一直听您说</div>
-  <button class="hf" id="hfBtn" onclick="toggleHf()">免提模式：开（点我关）</button>
-</footer>
-
-<!-- ============ 文字底部 ============ -->
-<footer class="text" id="tFoot" style="display:none">
-  <div class="fwrap">
-    <div class="quick" id="quick"></div>
-    <div class="frow">
-      <button id="mic" onclick="toggleRec()" aria-label="按一下说话" hidden>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-      </button>
-      <textarea id="txt" rows="1" placeholder="说说情况，或打字"></textarea>
-      <button id="send" onclick="sendFromBox()">发送</button>
-    </div>
-    <div class="safety">小暖只帮您整理和提醒，不做诊断、不推荐药物；紧急情况请拨打 120</div>
-  </div>
+  <div class="hint" id="hint">点一下话筒，我就一直听您说</div>
+  <div class="safety">小暖只帮您整理和提醒，不做诊断、不推荐药物；紧急情况请拨打 120</div>
 </footer>
 
 <div id="drawer" role="dialog" aria-label="健康档案">
@@ -336,24 +255,34 @@
 
 <div id="toast" role="status"></div>
 
+<!-- ============ 启动模态框：只有加载慢/失败时才出现 ============ -->
+<div id="boot" role="dialog" aria-modal="true" aria-label="正在准备" style="display:none">
+  <div class="boot-card">
+    <div class="boot-face">
+      <svg viewBox="0 0 64 64" width="76" height="76" aria-hidden="true">
+        <ellipse cx="32" cy="34" rx="24" ry="22" fill="#fffdfa" stroke="#e6dccd" stroke-width="2.5"/>
+        <circle cx="24" cy="30" r="2.8" fill="#4a4038"/>
+        <circle cx="40" cy="30" r="2.8" fill="#4a4038"/>
+        <path d="M26 38 Q32 43 38 38" stroke="#4a4038" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        <path d="M36 18 C33 13 42 12 40 17" fill="none" stroke="#5a4f44" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="bt" id="bootT">正在准备…</div>
+    <div class="bs" id="bootS">小暖马上就来</div>
+    <button class="boot-retry" id="bootRetry" hidden onclick="location.reload()">再试一次</button>
+  </div>
+</div>
+
 <script>
 /* ================= 基础状态 ================= */
 const API = "/companion";
 let cid = localStorage.getItem("xn_cid") || (()=>{ const v="c-"+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem("xn_cid",v); return v; })();
 let caps = {asr:false, tts:false};
 let profile = JSON.parse(localStorage.getItem("xn_profile")||"{}");
-let view = "voice", busy = false, handsfree = true;
+let busy = false, voiceOn = false;          // voiceOn：语音会话总开关（话筒点按切换）
 const ICON = {
-  stetho:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v6a5 5 0 0 0 10 0V3"/><path d="M9 14v3a4 4 0 0 0 8 0v-2"/><circle cx="17" cy="12" r="2.5"/></svg>',
-  pill:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="18" height="7" rx="3.5" transform="rotate(-30 12 12.5)"/><path d="M9.5 7.5l5 8.5"/></svg>',
-  folder:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg>',
-  chev:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
-  bot:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 3-8 1.5 2H21"/></svg>',
-  user:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
   spk:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 6a9 9 0 0 1 0 12"/></svg>',
-  copy:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
-  keyboard:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg>',
-  wave:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg>'
+  copy:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
 };
 
 /* ================= 档案 ================= */
@@ -379,32 +308,31 @@ function saveProfile(){
   closeDrawer(); toast("档案已保存（只存在本机）");
 }
 
-/* ================= 视图与状态机 ================= */
-const voiceView=document.getElementById("voiceView"), textView=document.getElementById("textView");
-const vFoot=document.getElementById("vFoot"), tFoot=document.getElementById("tFoot");
-const modeBtn=document.getElementById("modeBtn"), statusEl=document.getElementById("status");
-function setView(v){
-  view=v;
-  voiceView.style.display = v==="voice"?"flex":"none";
-  vFoot.style.display = v==="voice"?"flex":"none";
-  textView.style.display = v==="text"?"block":"none";
-  tFoot.style.display = v==="text"?"block":"none";
-  modeBtn.innerHTML = v==="voice"?ICON.keyboard:ICON.wave;
-  modeBtn.setAttribute("aria-label", v==="voice"?"切换到打字模式":"回到语音模式");
-}
-function toggleView(){ stopRec(true); interruptSpeak(); setView(view==="voice"?"text":"voice"); }
+/* ================= 状态机 ================= */
+const voiceView=document.getElementById("voiceView"), statusEl=document.getElementById("status");
 const STATUS={
-  idle:"点一下话筒，跟我说",
-  idleFresh:"您好，我是小暖 · 点话筒开始",
+  idle:"语音关了 · 点一下话筒再开始",
   listen:"在听您说…（说完停一停就好）",
   think:"小暖在想…",
-  speak:"小暖在说…（点话筒可以打断）"
+  speak:"小暖在说… 点话筒停"
 };
-function setVS(s){
+function setVS(s, txt){
   voiceView.classList.remove("listen","think","speak");
   if(s==="listen"||s==="think"||s==="speak") voiceView.classList.add(s);
-  statusEl.textContent = STATUS[s]||STATUS.idle;
-  statusEl.classList.toggle("dim", s==="idle"||s==="idleFresh");
+  statusEl.textContent = txt || STATUS[s] || "";
+  statusEl.classList.toggle("dim", s==="idle");
+}
+function setMicUI(){
+  const m=document.getElementById("bigMic");
+  m.classList.toggle("off", !voiceOn);
+  m.classList.toggle("rec", !!recCtx);
+  document.getElementById("hint").textContent = voiceOn ? "点一下暂停 · 我一直听您说" : "点一下话筒，我就一直听您说";
+}
+
+/* ================= 字幕（说的话同步显示在大话筒上方） ================= */
+const subtitleEl=document.getElementById("subtitle");
+function setSubtitle(who,text){
+  subtitleEl.innerHTML=(who?`<span class="sw">${who}</span>`:"")+esc(text||"");
 }
 
 /* ================= 语音字幕流 ================= */
@@ -421,47 +349,8 @@ function capBot(t,now){
   d.innerHTML=`<div class="cl">小暖</div><div class="ct"></div>`;
   d.querySelector(".ct").textContent=t; capList.appendChild(d); capScroll(); return d;
 }
-function capHost(){ return capList; }
 
-/* ================= 文字视图消息渲染 ================= */
-const list=document.getElementById("list");
-function scrollBottom(force){
-  const c=document.getElementById("chat");
-  if(force || c.scrollHeight-c.scrollTop-c.clientHeight<160) c.scrollTop=c.scrollHeight;
-}
-function addUser(t){
-  const d=document.createElement("div"); d.className="row user";
-  d.innerHTML=`<div class="who">${ICON.user}</div><div class="bubble"></div>`;
-  d.querySelector(".bubble").textContent=t; list.appendChild(d); scrollBottom(true);
-}
-let botRow=null, botBub=null, buf="", rafId=null, pending=[];
-function newBot(){ botRow=document.createElement("div"); botRow.className="row bot";
-  botRow.innerHTML=`<div class="who">${ICON.bot}</div><div class="bubble"></div>`;
-  botBub=botRow.querySelector(".bubble"); list.appendChild(botRow); buf=""; renderBot();
-}
-function renderBot(){
-  botBub.textContent=buf;
-  if(pending.length>0){ const c=document.createElement("span"); c.className="cursor"; botBub.appendChild(c); }
-  scrollBottom(false);
-}
-function tick(){
-  if(pending.length===0){ rafId=null; renderBot(); return; }
-  const take=Math.min(pending.length, Math.max(2, Math.ceil(pending.length/28)));
-  buf+=pending.splice(0,take).join("");
-  renderBot(); rafId=requestAnimationFrame(tick);
-}
-function botSay(t){
-  pending.length=0; if(rafId) cancelAnimationFrame(rafId);
-  if(!botRow) newBot();
-  buf=""; pending=t.split(""); rafId=requestAnimationFrame(tick);
-}
-function botAppend(t){
-  pending.push(...t.split(""));
-  if(!rafId) rafId=requestAnimationFrame(tick);
-}
-function finishBot(){ pending.length=0; if(rafId){cancelAnimationFrame(rafId); rafId=null;} buf=buf.replace(/\s+$/,""); renderBot(); }
-
-/* ================= 卡片渲染（两个视图共用） ================= */
+/* ================= 卡片渲染 ================= */
 function esc(s){ const d=document.createElement("div"); d.textContent=s==null?"":String(s); return d.innerHTML; }
 function cardText(c){
   if(c.type==="summary"){
@@ -485,7 +374,6 @@ function cardText(c){
   return JSON.stringify(c);
 }
 function renderCard(c){
-  if(view==="text") finishBot();
   const d=document.createElement("div"); d.className="card";
   let body="";
   if(c.type==="summary"){
@@ -508,8 +396,7 @@ function renderCard(c){
   } else return;
   d.innerHTML=body+`<div class="card-ops">${caps.tts?`<button onclick="speak(this)">${ICON.spk}念给我听</button>`:""}<button onclick="copyCard(this)">${ICON.copy}复制给医生</button></div>`;
   d.dataset.ctext=cardText(c);
-  if(view==="text"){ list.appendChild(d); scrollBottom(true); }
-  else { capList.appendChild(d); capScroll(); }
+  capList.appendChild(d); capScroll();
   const saved=JSON.parse(localStorage.getItem("xn_cards")||"[]"); saved.unshift({t:Date.now(),c}); localStorage.setItem("xn_cards",JSON.stringify(saved.slice(0,30)));
 }
 function copyCard(btn){
@@ -535,14 +422,16 @@ function toast(msg){
 }
 
 /* ================= WAV 录音 + VAD 静音断句 ================= */
-let recCtx=null, recProc=null, recSrc=null, recStream=null, recBuf=[], recTimer=null;
+let recCtx=null, recProc=null, recSrc=null, recStream=null, recBuf=[], recTimer=null, recStarting=false;
 let speechSeen=false, silenceMs=0, lastAmp=0;
 async function startRec(){
-  if(recCtx) return;
-  if(!navigator.mediaDevices||!window.AudioContext){ toast("这个浏览器不支持录音，请用手机浏览器打开"); return; }
+  if(recCtx || recStarting) return;
+  recStarting=true;
   try{
     recStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});
+    if(!voiceOn){ recStream.getTracks().forEach(t=>t.stop()); return; }   // 等权限回来时用户已关掉
     recCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(recCtx.state==="suspended"){ recCtx.resume().catch(()=>{}); }
     recBuf=[]; speechSeen=false; silenceMs=0;
     recSrc=recCtx.createMediaStreamSource(recStream);
     recProc=recCtx.createScriptProcessor(4096,1,1);
@@ -557,12 +446,21 @@ async function startRec(){
       else if(speechSeen){ silenceMs+=(4096/recCtx.sampleRate)*1000; if(silenceMs>1500) stopRec(); }
     };
     recSrc.connect(recProc); recProc.connect(recCtx.destination);
-    document.getElementById("bigMic").classList.add("rec");
-    document.getElementById("mic").classList.add("rec");
-    setVS("listen");
-    recTimer=setTimeout(stopRec,60000);
-  }catch(e){ recCtx=null; toast("需要麦克风权限才能说话"); }
+    setMicUI();
+    if(recCtx.state==="suspended"){
+      // 浏览器还没拿到用户手势：等第一次点屏幕再真正开始收音
+      setVS("listen","点一下屏幕，我就开始听");
+    }else{
+      setVS("listen");
+      armRecTimer();
+    }
+  }catch(e){
+    recCtx=null; voiceOn=false; setMicUI();
+    setVS("idle","需要麦克风权限才能说话");
+    toast("请在手机设置里允许麦克风权限");
+  }finally{ recStarting=false; }
 }
+function armRecTimer(){ clearTimeout(recTimer); recTimer=setTimeout(stopRec,60000); }
 function stopRec(silent){
   if(!recCtx) return;
   clearTimeout(recTimer);
@@ -570,50 +468,38 @@ function stopRec(silent){
   try{ recProc.disconnect(); recSrc.disconnect(); }catch(e){}
   recStream.getTracks().forEach(t=>t.stop());
   recCtx.close(); recCtx=null; recProc=null; recSrc=null; recStream=null; recBuf=[];
-  document.getElementById("bigMic").classList.remove("rec");
-  document.getElementById("mic").classList.remove("rec");
+  setMicUI();
   document.getElementById("ipWrap").style.setProperty("--amp",0);
   if(silent) return;
   const total=chunks.reduce((n,c)=>n+c.length,0);
-  if(total<rate*0.7){ if(view==="voice") setVS("idle"); toast("没录到声音，再试一次"); return; }
+  if(total<rate*0.7){ setVS("idle","刚才没听清，您再说一遍"); return; }
   const pcm=new Float32Array(total); let off=0;
   chunks.forEach(c=>{ pcm.set(c,off); off+=c.length; });
   const blob=encodeWav(pcm,rate);
-  if(view==="voice") setVS("think");
+  setVS("think");
   blobToB64(blob).then(b64=>streamSend({audio:b64, mime:"audio/wav"}));
 }
-function toggleRec(){ if(recCtx){ stopRec(); return; } startRec(); }
+
+/* ================= 大话筒 = 语音总开关（点一下关，再点一下开） ================= */
+let abortCtl=null;
 function bigMic(){
-  if(recCtx){ stopRec(); return; }        // 正在录：手动结束
-  if(voiceStateSpeaking()){ interruptSpeak(); }
-  if(busy) return;                        // 在想/在收：稍等
-  if(!caps.asr){ toast("这个浏览器不支持语音，用打字也可以"); return; }
+  if(voiceOn){
+    voiceOn=false;
+    if(abortCtl) abortCtl.abort();
+    stopRec(true);
+    interruptSpeak();
+    clearTimeout(hfTimer);
+    setSubtitle("","");
+    setMicUI();
+    setVS("idle");
+    return;
+  }
+  voiceOn=true; setMicUI();
   startRec();
 }
-function voiceStateSpeaking(){ return voiceView.classList.contains("speak"); }
-function toggleHf(){
-  handsfree=!handsfree; setHfUI();
-  toast(handsfree?"免提开了，我一直听您说":"免提关了，说话前先点话筒");
-}
-function setHfUI(){
-  document.getElementById("hfBtn").textContent = handsfree ? "免提模式：开（点我关）" : "免提模式：关（点我开）";
-  document.getElementById("hint").textContent = handsfree ? "说完停一停，我会一直听您说" : "按一下说话 · 说完停一停就好";
-}
-function encodeWav(samples,rate){
-  const n=samples.length, buf=new ArrayBuffer(44+n*2), v=new DataView(buf);
-  const ws=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
-  ws(0,"RIFF"); v.setUint32(4,36+n*2,true); ws(8,"WAVE"); ws(12,"fmt ");
-  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
-  v.setUint32(24,rate,true); v.setUint32(28,rate*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true);
-  ws(36,"data"); v.setUint32(40,n*2,true);
-  let o=44;
-  for(let i=0;i<n;i++,o+=2){ const s=Math.max(-1,Math.min(1,samples[i])); v.setInt16(o,s<0?s*32768:s*32767,true); }
-  return new Blob([buf],{type:"audio/wav"});
-}
-function blobToB64(blob){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.readAsDataURL(blob); }); }
 
 /* ================= 逐句 TTS 播报（预取 + 可打断） ================= */
-let interrupted=false, curAudio=null;
+let interrupted=false, curAudio=null, hfTimer=null, blockedText="";
 const ttsMemo={};
 function splitSent(t){
   return t.replace(/\s+/g," ").replace(/([。！？!?；;])/g,"$1\u0001").split("\u0001").map(s=>s.trim()).filter(Boolean);
@@ -627,137 +513,127 @@ function ttsFor(s){
   })());
 }
 function interruptSpeak(){ interrupted=true; if(curAudio){ curAudio.pause(); curAudio=null; } }
+function scheduleListen(){
+  clearTimeout(hfTimer);
+  hfTimer=setTimeout(()=>{ if(voiceOn && !recCtx && !busy && !recStarting) startRec(); }, 900);
+}
 async function speakReply(text){
-  if(!caps.tts){ if(text) capBot(text); setVS("idle"); toast("语音念不了，您看下面的字"); return; }
-  const sents=splitSent(text); if(!sents.length) return;
+  if(!caps.tts){ if(text) capBot(text); setSubtitle("小暖",text); setVS("idle"); if(voiceOn) scheduleListen(); return; }
+  const sents=splitSent(text);
+  if(!sents.length){ setVS("idle"); setSubtitle("",""); if(voiceOn) scheduleListen(); return; }
   interrupted=false; setVS("speak");
   for(let i=0;i<sents.length;i++){
     if(interrupted) return;
     let b64;
     try{ const p=ttsFor(sents[i]); if(sents[i+1]) ttsFor(sents[i+1]); b64=await p; }
-    catch(e){ capBot(sents.slice(i).join("")); setVS("idle"); toast("语音念不了了，您看下面的字"); return; }
+    catch(e){ capBot(sents.slice(i).join("")); break; }
     if(interrupted) return;
     capBot(sents[i], true);
-    await new Promise(res=>{ curAudio=new Audio("data:audio/wav;base64,"+b64); curAudio.onended=res; curAudio.onerror=res; curAudio.play().catch(res); });
+    setSubtitle("小暖", sents[i]);
+    const done=await new Promise(res=>{ curAudio=new Audio("data:audio/wav;base64,"+b64);
+      curAudio.onended=()=>res(true); curAudio.onerror=()=>res(false);
+      curAudio.play().catch(()=>res("blocked")); });
     curAudio=null;
+    if(done==="blocked"){   // 浏览器要求先点一下屏幕才让出声：先看字幕，点屏后补播
+      setSubtitle("小暖", text);
+      blockedText=text;
+      setVS("idle","点一下屏幕，我就能开口说话");
+      if(voiceOn) scheduleListen();
+      return;
+    }
   }
-  if(!interrupted){
-    setVS("idle");
-    if(handsfree && view==="voice") setTimeout(()=>{ if(handsfree && view==="voice" && !recCtx && !busy) startRec(); }, 900);
-  }
+  if(!interrupted){ setVS("idle"); setSubtitle("",""); if(voiceOn) scheduleListen(); }
 }
 
-/* ================= 请求（两个视图共用管道） ================= */
+/* ================= 请求管道（语音唯一） ================= */
 async function streamSend(extra){
   if(busy) return; busy=true;
-  const isVoice = view==="voice";
+  const ctl=new AbortController(); abortCtl=ctl;
   const reply={text:""};
-  if(isVoice) setVS("think"); else { document.getElementById("send").disabled=true; document.getElementById("txt").disabled=true; }
+  let aborted=false;
+  setVS("think");
   try{
-    const resp=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","makers-conversation-id":cid},
+    const resp=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","makers-conversation-id":cid},signal:ctl.signal,
       body:JSON.stringify(Object.assign({profile:profileText()},extra))});
     if(!resp.ok){
       const e=await resp.json().catch(()=>({}));
-      const m=e.error||("请求失败（"+resp.status+"）");
-      if(isVoice){ capBot(m); setVS("idle"); } else { botSay(m); }
-      return;
-    }
-    if(!isVoice) newBot();
-    const reader=resp.body.getReader(); const dec=new TextDecoder(); let bufS="";
-    while(true){
-      const {done,value}=await reader.read(); if(done) break;
-      bufS+=dec.decode(value,{stream:true});
-      const parts=bufS.split("\n\n"); bufS=parts.pop();
-      for(const p of parts){
-        const line=p.split("\n").find(l=>l.startsWith("data:")); if(!line) continue;
-        const dataStr=line.slice(5).trim(); if(dataStr==="[DONE]") continue;
-        let ev; try{ ev=JSON.parse(dataStr); }catch(e){ continue; }
-        if(ev.type==="asr"){ if(isVoice) capUser(ev.content); else addUser(ev.content); }
-        else if(ev.type==="ai_response"){ if(isVoice) reply.text+=ev.content; else botAppend(ev.content); }
-        else if(ev.type==="card") renderCard(ev.data);
-        else if(ev.type==="error_message"){
-          if(isVoice){ capBot(ev.content); setVS("idle"); } else { finishBot(); botSay(ev.content); }
+      capBot(e.error||("请求失败（"+resp.status+"）"));
+    }else{
+      const reader=resp.body.getReader(); const dec=new TextDecoder(); let bufS="";
+      while(true){
+        const {done,value}=await reader.read(); if(done) break;
+        bufS+=dec.decode(value,{stream:true});
+        const parts=bufS.split("\n\n"); bufS=parts.pop();
+        for(const p of parts){
+          const line=p.split("\n").find(l=>l.startsWith("data:")); if(!line) continue;
+          const dataStr=line.slice(5).trim(); if(dataStr==="[DONE]") continue;
+          let ev; try{ ev=JSON.parse(dataStr); }catch(e){ continue; }
+          if(ev.type==="asr"){ capUser(ev.content); setSubtitle("您", ev.content); }
+          else if(ev.type==="ai_response") reply.text+=ev.content;
+          else if(ev.type==="card") renderCard(ev.data);
+          else if(ev.type==="error_message"){ capBot(ev.content); setSubtitle("", ev.content); }
         }
       }
     }
-    finishBot();
   }catch(e){
-    if(isVoice){ capBot("网络出了点问题，请再试一次"); setVS("idle"); }
-    else { finishBot(); botSay("网络出了点问题，请再试一次"); }
+    if(e && e.name==="AbortError") aborted=true;
+    else { capBot("网络出了点问题，请再试一次"); setSubtitle("", "网络出了点问题，请再试一次"); }
   }finally{
+    if(abortCtl===ctl) abortCtl=null;
     busy=false;
-    if(!isVoice){ document.getElementById("send").disabled=false; document.getElementById("txt").disabled=false; showQuick(); }
   }
-  if(isVoice && reply.text) await speakReply(reply.text);
-}
-function sendFromBox(){
-  const t=txt.value.trim(); if(!t) return;
-  hideEntries(); txt.value=""; addUser(t);
-  streamSend({message:t});
-}
-function entry(mode,label){
-  if(view==="text"){ hideEntries(); addUser(label); }
-  else { hideVChips(); capUser(label); }
-  streamSend({message:label, mode});
+  if(aborted) return;                       // 用户主动关掉语音，安静退出
+  if(reply.text) await speakReply(reply.text);
+  else { setVS("idle","刚才没连上，您再说一遍试试"); if(voiceOn) scheduleListen(); }
 }
 
-/* ================= 快捷 / 入口 ================= */
-function hideEntries(){ const e=document.getElementById("entries"); if(e) e.remove(); quick.style.display="none"; }
-function showQuick(){ if(view==="text") quick.style.display="flex"; }
-function hideVChips(){ const e=document.getElementById("vchips"); if(e) e.innerHTML=""; }
-function renderEntries(){
-  const w=document.createElement("div"); w.className="entries"; w.id="entries";
-  const nm=profile.name||"您";
-  const items=[
-    {ic:ICON.stetho, n:"看病前", d:"陪您把病情聊清楚，整理成摘要卡带给医生", go:()=>entry("pre","我想准备一下明天看病")},
-    {ic:ICON.pill, n:"看完医生", d:"把医嘱变成服药表和复诊提醒", go:()=>entry("post","我刚看完医生，医生说的话我打给你")},
-    {ic:ICON.folder, n:"问问健康档案", d:"今天吃什么药 · 复诊时间 · 注意什么", go:()=>entry("",`${nm}今天该吃什么药？什么时候复诊？`)},
-  ];
-  items.forEach(it=>{
-    const b=document.createElement("button"); b.className="entry";
-    b.innerHTML=`<span class="eic">${it.ic}</span><span class="etx"><span class="en">${it.n}</span><br><span class="ed">${it.d}</span></span><span class="ear">${ICON.chev}</span>`;
-    b.onclick=it.go; w.appendChild(b); 
-  });
-  list.appendChild(w); scrollBottom(true);
-}
-function renderVChips(){
-  const w=document.getElementById("vchips"); if(!w) return;
-  const nm=profile.name||"我";
-  const items=[
-    {n:"看病前想聊聊", go:()=>entry("pre","我想准备一下明天看病")},
-    {n:"刚看完医生", go:()=>entry("post","我刚看完医生，医生说的话我说给你")},
-    {n:"今天吃什么药", go:()=>entry("",`${nm}今天该吃什么药？什么时候复诊？`)},
-  ];
-  w.innerHTML="";
-  items.forEach(it=>{
-    const b=document.createElement("button"); b.className="vchip"; b.textContent=it.n; b.onclick=it.go; w.appendChild(b);
-  });
-}
-const quickRow=document.getElementById("quick");
-["我想准备看病","我刚看完医生","今天该吃什么药"].forEach(t=>{
-  const c=document.createElement("button"); c.className="qchip"; c.textContent=t;
-  c.onclick=()=>{ txt.value=t; sendFromBox(); }; quickRow.appendChild(c);
-});
+/* ================= 首次触摸解锁音频（浏览器自动播放限制） ================= */
+document.addEventListener("pointerdown", ()=>{
+  if(recCtx && recCtx.state==="suspended"){
+    recCtx.resume().then(()=>{
+      if(!recCtx) return;
+      recBuf=[]; speechSeen=false; silenceMs=0;
+      setVS("listen");
+      armRecTimer();
+    }).catch(()=>{});
+  }
+  if(blockedText){ const t=blockedText; blockedText=""; speakReply(t); }
+},{capture:true});
 
-/* ================= 初始化 ================= */
-(async ()=>{
-  setView("voice"); setVS("idleFresh");
-  renderVChips();
-  let capsKnown=false;
-  try{
-    const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","makers-conversation-id":cid},body:JSON.stringify({action:"caps"})});
-    if(r.ok){ caps=await r.json(); capsKnown=true; }
-  }catch(e){}
-  const who=profile.name||"您好";
-  const greet=`${who}，我是小暖。看病前，我陪您把病情聊清楚，整理成一张摘要卡带给医生；看完医生，我帮您把药和复诊安排列得明明白白。点下面的话筒，跟我说就行。`;
+/* ================= 启动：加载中模态框（只有慢/失败才出现） -> 就绪直接进聊天 ================= */
+const boot=document.getElementById("boot"), bootT=document.getElementById("bootT"), bootS=document.getElementById("bootS"), bootRetry=document.getElementById("bootRetry");
+let entered=false;
+const bootTimer=setTimeout(()=>{ if(!entered) boot.style.display="flex"; }, 900);
+function startVoiceSession(){
+  entered=true; clearTimeout(bootTimer);
+  boot.classList.add("hide");
+  setTimeout(()=>{ boot.style.display="none"; },260);
+  const first=!localStorage.getItem("xn_greeted");
+  const greet = first
+    ? `${profile.name||"您好"}，我是小暖。看病前，我陪您把病情聊清楚，整理成一张摘要卡带给医生；看完医生，我帮您把药和复诊安排记得明明白白。您慢慢说，我一直听着呢。`
+    : `${profile.name||"您好"}，我回来啦。跟我说说话吧。`;
   capBot(greet);
-  if(capsKnown && !caps.asr){
-    // 明确不支持语音：自动切打字模式
-    document.getElementById("bigMic").style.display="none";
-    setView("text"); newBot(); botSay(greet);
-    setTimeout(()=>{ finishBot(); renderEntries(); },1200);
-  } else if(capsKnown && !caps.tts){
-    document.getElementById("hint").textContent="按一下说话 · 语音念不出时看下面的字";
+  if(first) localStorage.setItem("xn_greeted","1");
+  voiceOn=true; setMicUI();
+  speakReply(greet);
+}
+(async ()=>{
+  setVS("idle","您好，我是小暖");
+  // caps 探测，失败自动重试；加载好了就直接进聊天，不用点任何按钮
+  for(let i=0;i<80;i++){
+    try{
+      const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","makers-conversation-id":cid},body:JSON.stringify({action:"caps"})});
+      if(r.ok){ caps=await r.json(); if(caps.asr) break; }
+    }catch(e){}
+    if(i>1){ bootT.textContent="网络有点慢，还在试…"; bootS.textContent="请稍等一下，马上好"; }
+    await new Promise(s=>setTimeout(s,2000));
+  }
+  if(caps.asr) startVoiceSession();
+  else{
+    boot.style.display="flex";
+    bootT.textContent="语音服务暂时连不上";
+    bootS.textContent="检查一下网络，然后再试一次";
+    bootRetry.hidden=false;
   }
 })();
 </script>
