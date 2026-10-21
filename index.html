@@ -87,6 +87,10 @@
   /* ---------- 语音底部（大话筒 = 语音开关） ---------- */
   footer.voice{display:flex;flex-direction:column;align-items:center;gap:9px;
     padding:14px 16px calc(12px + env(safe-area-inset-bottom))}
+  .subtitle{width:100%;max-width:680px;min-height:3.2em;display:flex;align-items:center;justify-content:center;
+    text-align:center;font-size:19px;font-weight:500;line-height:1.5;padding:0 6px}
+  .subtitle:empty{min-height:0}
+  .subtitle .sw{font-size:14px;color:var(--muted);margin-right:8px;flex-shrink:0}
   #bigMic{width:78px;height:78px;border-radius:999px;border:none;background:var(--accent);color:#fff;
     display:flex;align-items:center;justify-content:center;flex-shrink:0}
   #bigMic:active{background:var(--accent-deep)}
@@ -163,9 +167,9 @@
   .boot-face{animation:breathe 3.4s ease-in-out infinite}
   #boot .bt{font-size:21px;font-weight:600;margin-top:10px;line-height:1.4}
   #boot .bs{font-size:15px;color:var(--muted);line-height:1.5}
-  #boot.ready{cursor:pointer}
-  #boot.ready .boot-card{border-color:var(--accent);box-shadow:0 0 0 6px var(--accent-wash),0 10px 30px rgba(28,26,23,.08)}
-  #boot.ready .bt{color:var(--accent-deep)}
+  .boot-retry{margin-top:14px;height:46px;padding:0 28px;border:none;border-radius:999px;
+    background:var(--accent);color:#fff;font-size:16px;font-weight:600;font-family:inherit}
+  .boot-retry:active{background:var(--accent-deep)}
 
   #toast{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:99;
     background:var(--text);color:var(--surface);font-size:15px;border-radius:999px;
@@ -225,8 +229,9 @@
   </div>
 </main>
 
-<!-- ============ 语音底部：大话筒 = 语音开关 ============ -->
+<!-- ============ 语音底部：字幕 + 大话筒 ============ -->
 <footer class="voice" id="vFoot">
+  <div class="subtitle" id="subtitle" aria-live="polite"></div>
   <button id="bigMic" class="off" onclick="bigMic()" aria-label="打开或关闭语音">
     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
   </button>
@@ -250,8 +255,8 @@
 
 <div id="toast" role="status"></div>
 
-<!-- ============ 启动模态框：没加载出来时一直显示 ============ -->
-<div id="boot" role="dialog" aria-modal="true" aria-label="正在准备">
+<!-- ============ 启动模态框：只有加载慢/失败时才出现 ============ -->
+<div id="boot" role="dialog" aria-modal="true" aria-label="正在准备" style="display:none">
   <div class="boot-card">
     <div class="boot-face">
       <svg viewBox="0 0 64 64" width="76" height="76" aria-hidden="true">
@@ -264,6 +269,7 @@
     </div>
     <div class="bt" id="bootT">正在准备…</div>
     <div class="bs" id="bootS">小暖马上就来</div>
+    <button class="boot-retry" id="bootRetry" hidden onclick="location.reload()">再试一次</button>
   </div>
 </div>
 
@@ -321,6 +327,12 @@ function setMicUI(){
   m.classList.toggle("off", !voiceOn);
   m.classList.toggle("rec", !!recCtx);
   document.getElementById("hint").textContent = voiceOn ? "点一下暂停 · 我一直听您说" : "点一下话筒，我就一直听您说";
+}
+
+/* ================= 字幕（说的话同步显示在大话筒上方） ================= */
+const subtitleEl=document.getElementById("subtitle");
+function setSubtitle(who,text){
+  subtitleEl.innerHTML=(who?`<span class="sw">${who}</span>`:"")+esc(text||"");
 }
 
 /* ================= 语音字幕流 ================= */
@@ -435,14 +447,20 @@ async function startRec(){
     };
     recSrc.connect(recProc); recProc.connect(recCtx.destination);
     setMicUI();
-    setVS("listen");
-    recTimer=setTimeout(stopRec,60000);
+    if(recCtx.state==="suspended"){
+      // 浏览器还没拿到用户手势：等第一次点屏幕再真正开始收音
+      setVS("listen","点一下屏幕，我就开始听");
+    }else{
+      setVS("listen");
+      armRecTimer();
+    }
   }catch(e){
     recCtx=null; voiceOn=false; setMicUI();
     setVS("idle","需要麦克风权限才能说话");
     toast("请在手机设置里允许麦克风权限");
   }finally{ recStarting=false; }
 }
+function armRecTimer(){ clearTimeout(recTimer); recTimer=setTimeout(stopRec,60000); }
 function stopRec(silent){
   if(!recCtx) return;
   clearTimeout(recTimer);
@@ -471,6 +489,7 @@ function bigMic(){
     stopRec(true);
     interruptSpeak();
     clearTimeout(hfTimer);
+    setSubtitle("","");
     setMicUI();
     setVS("idle");
     return;
@@ -480,7 +499,7 @@ function bigMic(){
 }
 
 /* ================= 逐句 TTS 播报（预取 + 可打断） ================= */
-let interrupted=false, curAudio=null, hfTimer=null;
+let interrupted=false, curAudio=null, hfTimer=null, blockedText="";
 const ttsMemo={};
 function splitSent(t){
   return t.replace(/\s+/g," ").replace(/([。！？!?；;])/g,"$1\u0001").split("\u0001").map(s=>s.trim()).filter(Boolean);
@@ -499,9 +518,9 @@ function scheduleListen(){
   hfTimer=setTimeout(()=>{ if(voiceOn && !recCtx && !busy && !recStarting) startRec(); }, 900);
 }
 async function speakReply(text){
-  if(!caps.tts){ if(text) capBot(text); setVS("idle"); if(voiceOn) scheduleListen(); return; }
+  if(!caps.tts){ if(text) capBot(text); setSubtitle("小暖",text); setVS("idle"); if(voiceOn) scheduleListen(); return; }
   const sents=splitSent(text);
-  if(!sents.length){ setVS("idle"); if(voiceOn) scheduleListen(); return; }
+  if(!sents.length){ setVS("idle"); setSubtitle("",""); if(voiceOn) scheduleListen(); return; }
   interrupted=false; setVS("speak");
   for(let i=0;i<sents.length;i++){
     if(interrupted) return;
@@ -510,18 +529,20 @@ async function speakReply(text){
     catch(e){ capBot(sents.slice(i).join("")); break; }
     if(interrupted) return;
     capBot(sents[i], true);
+    setSubtitle("小暖", sents[i]);
     const done=await new Promise(res=>{ curAudio=new Audio("data:audio/wav;base64,"+b64);
       curAudio.onended=()=>res(true); curAudio.onerror=()=>res(false);
       curAudio.play().catch(()=>res("blocked")); });
     curAudio=null;
-    if(done==="blocked"){   // 浏览器要求先点一下屏幕才让出声
-      capBot(sents.slice(i+1).join(""));
+    if(done==="blocked"){   // 浏览器要求先点一下屏幕才让出声：先看字幕，点屏后补播
+      setSubtitle("小暖", text);
+      blockedText=text;
       setVS("idle","点一下屏幕，我就能开口说话");
       if(voiceOn) scheduleListen();
       return;
     }
   }
-  if(!interrupted){ setVS("idle"); if(voiceOn) scheduleListen(); }
+  if(!interrupted){ setVS("idle"); setSubtitle("",""); if(voiceOn) scheduleListen(); }
 }
 
 /* ================= 请求管道（语音唯一） ================= */
@@ -547,16 +568,16 @@ async function streamSend(extra){
           const line=p.split("\n").find(l=>l.startsWith("data:")); if(!line) continue;
           const dataStr=line.slice(5).trim(); if(dataStr==="[DONE]") continue;
           let ev; try{ ev=JSON.parse(dataStr); }catch(e){ continue; }
-          if(ev.type==="asr") capUser(ev.content);
+          if(ev.type==="asr"){ capUser(ev.content); setSubtitle("您", ev.content); }
           else if(ev.type==="ai_response") reply.text+=ev.content;
           else if(ev.type==="card") renderCard(ev.data);
-          else if(ev.type==="error_message") capBot(ev.content);
+          else if(ev.type==="error_message"){ capBot(ev.content); setSubtitle("", ev.content); }
         }
       }
     }
   }catch(e){
     if(e && e.name==="AbortError") aborted=true;
-    else capBot("网络出了点问题，请再试一次");
+    else { capBot("网络出了点问题，请再试一次"); setSubtitle("", "网络出了点问题，请再试一次"); }
   }finally{
     if(abortCtl===ctl) abortCtl=null;
     busy=false;
@@ -568,17 +589,25 @@ async function streamSend(extra){
 
 /* ================= 首次触摸解锁音频（浏览器自动播放限制） ================= */
 document.addEventListener("pointerdown", ()=>{
-  if(recCtx && recCtx.state==="suspended") recCtx.resume().catch(()=>{});
+  if(recCtx && recCtx.state==="suspended"){
+    recCtx.resume().then(()=>{
+      if(!recCtx) return;
+      recBuf=[]; speechSeen=false; silenceMs=0;
+      setVS("listen");
+      armRecTimer();
+    }).catch(()=>{});
+  }
+  if(blockedText){ const t=blockedText; blockedText=""; speakReply(t); }
 },{capture:true});
 
-/* ================= 启动模态框：加载中 -> 点我开始 ================= */
-const boot=document.getElementById("boot"), bootT=document.getElementById("bootT"), bootS=document.getElementById("bootS");
-function begin(){
+/* ================= 启动：加载中模态框（只有慢/失败才出现） -> 就绪直接进聊天 ================= */
+const boot=document.getElementById("boot"), bootT=document.getElementById("bootT"), bootS=document.getElementById("bootS"), bootRetry=document.getElementById("bootRetry");
+let entered=false;
+const bootTimer=setTimeout(()=>{ if(!entered) boot.style.display="flex"; }, 900);
+function startVoiceSession(){
+  entered=true; clearTimeout(bootTimer);
   boot.classList.add("hide");
   setTimeout(()=>{ boot.style.display="none"; },260);
-  startVoiceSession();
-}
-async function startVoiceSession(){
   const first=!localStorage.getItem("xn_greeted");
   const greet = first
     ? `${profile.name||"您好"}，我是小暖。看病前，我陪您把病情聊清楚，整理成一张摘要卡带给医生；看完医生，我帮您把药和复诊安排记得明明白白。您慢慢说，我一直听着呢。`
@@ -586,28 +615,26 @@ async function startVoiceSession(){
   capBot(greet);
   if(first) localStorage.setItem("xn_greeted","1");
   voiceOn=true; setMicUI();
-  await speakReply(greet);
+  speakReply(greet);
 }
 (async ()=>{
   setVS("idle","您好，我是小暖");
-  // caps 探测，失败自动重试，期间一直显示加载模态框
-  for(let i=0;i<60;i++){
+  // caps 探测，失败自动重试；加载好了就直接进聊天，不用点任何按钮
+  for(let i=0;i<80;i++){
     try{
       const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","makers-conversation-id":cid},body:JSON.stringify({action:"caps"})});
-      if(r.ok){ caps=await r.json(); break; }
+      if(r.ok){ caps=await r.json(); if(caps.asr) break; }
     }catch(e){}
-    if(i>1){ bootT.textContent="网络有点慢，还在试…"; bootS.textContent="请稍等一下"; }
+    if(i>1){ bootT.textContent="网络有点慢，还在试…"; bootS.textContent="请稍等一下，马上好"; }
     await new Promise(s=>setTimeout(s,2000));
   }
-  if(!caps.asr){
+  if(caps.asr) startVoiceSession();
+  else{
+    boot.style.display="flex";
     bootT.textContent="语音服务暂时连不上";
-    bootS.textContent="请过一会儿再打开试试";
-    return;
+    bootS.textContent="检查一下网络，然后再试一次";
+    bootRetry.hidden=false;
   }
-  boot.classList.add("ready");
-  bootT.textContent="小暖准备好啦";
-  bootS.textContent="点一下，开始说话";
-  boot.addEventListener("click", begin, {once:true});
 })();
 </script>
 </body>
