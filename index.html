@@ -422,21 +422,43 @@ function toast(msg){
 }
 
 /* ================= WAV 录音 + VAD 静音断句 ================= */
-let recCtx=null, recProc=null, recSrc=null, recStream=null, recBuf=[], recTimer=null, recStarting=false;
-let speechSeen=false, silenceMs=0, lastAmp=0;
+let recCtx=null, recProc=null, recSrc=null, recStream=null, recBuf=[], recTimer=null, recStarting=false, micRetry=0;
+let speechSeen=false, silenceMs=0, lastAmp=0, recFrames=0, recWatch=null;
+const MIC_MAX_RETRY=3;
 async function startRec(){
   if(recCtx || recStarting) return;
   recStarting=true;
+  let stream=null;
   try{
-    recStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});
-    if(!voiceOn){ recStream.getTracks().forEach(t=>t.stop()); return; }   // 等权限回来时用户已关掉
+    // 约束用 ideal：个别机型/WebView 不支持回声消除或降噪，硬约束会直接拒绝录音
+    stream=await navigator.mediaDevices.getUserMedia({audio:{
+      channelCount:{ideal:1}, echoCancellation:{ideal:true}, noiseSuppression:{ideal:true}, autoGainControl:{ideal:true}
+    }});
+  }catch(e){
+    // APK 里可能赶上系统权限弹窗还没批：等一会重试，别直接放弃
+    recStarting=false;
+    if(voiceOn && micRetry<MIC_MAX_RETRY){
+      micRetry++;
+      setVS("idle","麦克风正在准备，请稍等…");
+      setTimeout(()=>{ if(voiceOn && !recCtx && !recStarting) startRec(); },1600);
+      return;
+    }
+    voiceOn=false; setMicUI(); setSubtitle("","");
+    setVS("idle","麦克风没打开，点一下话筒再试");
+    toast("麦克风没打开，允许权限后再点一下话筒");
+    return;
+  }
+  micRetry=0;
+  if(!voiceOn){ stream.getTracks().forEach(t=>t.stop()); recStarting=false; return; }   // 等权限回来时用户已关掉
+  try{
     recCtx=new (window.AudioContext||window.webkitAudioContext)();
     if(recCtx.state==="suspended"){ recCtx.resume().catch(()=>{}); }
-    recBuf=[]; speechSeen=false; silenceMs=0;
-    recSrc=recCtx.createMediaStreamSource(recStream);
+    recBuf=[]; recFrames=0; speechSeen=false; silenceMs=0;
+    recSrc=recCtx.createMediaStreamSource(stream);
     recProc=recCtx.createScriptProcessor(4096,1,1);
     recProc.onaudioprocess=e=>{
       const d=e.inputBuffer.getChannelData(0);
+      recFrames++;
       recBuf.push(new Float32Array(d));
       let sum=0; for(let i=0;i<d.length;i++) sum+=d[i]*d[i];
       const rms=Math.sqrt(sum/d.length);
@@ -448,22 +470,37 @@ async function startRec(){
     recSrc.connect(recProc); recProc.connect(recCtx.destination);
     setMicUI();
     if(recCtx.state==="suspended"){
-      // 浏览器还没拿到用户手势：等第一次点屏幕再真正开始收音
+      // 浏览器/WebView 还没拿到用户手势：等第一次点屏幕再真正收音
       setVS("listen","点一下屏幕，我就开始听");
+      document.getElementById("hint").textContent="点一下屏幕就开始了";
+      toast("点一下屏幕，小暖就开始听");
     }else{
       setVS("listen");
-      armRecTimer();
+      armRecTimer(); armFrameWatch();
     }
   }catch(e){
-    recCtx=null; voiceOn=false; setMicUI();
-    setVS("idle","需要麦克风权限才能说话");
-    toast("请在手机设置里允许麦克风权限");
+    try{ recProc&&recProc.disconnect(); recSrc&&recSrc.disconnect(); }catch(_){}
+    stream.getTracks().forEach(t=>t.stop());
+    if(recCtx){ recCtx.close().catch(()=>{}); }
+    recCtx=null; recProc=null; recSrc=null;
+    setVS("idle","麦克风出了点问题，点一下话筒再试");
   }finally{ recStarting=false; }
 }
 function armRecTimer(){ clearTimeout(recTimer); recTimer=setTimeout(stopRec,60000); }
+/* 音频通道自检：4 秒还没收到任何声音帧，就提示或自动重听一次 */
+function armFrameWatch(){
+  clearTimeout(recWatch);
+  recWatch=setTimeout(()=>{
+    if(!recCtx || recFrames>0) return;
+    const suspended=recCtx.state==="suspended";
+    stopRec(true);
+    if(suspended){ setVS("idle","点一下屏幕，我就开始听"); document.getElementById("hint").textContent="点一下屏幕就开始了"; }
+    else if(voiceOn){ setVS("idle","没收到声音，小暖再听一次"); setTimeout(()=>{ if(voiceOn && !recCtx && !recStarting) startRec(); },800); }
+  },4000);
+}
 function stopRec(silent){
   if(!recCtx) return;
-  clearTimeout(recTimer);
+  clearTimeout(recTimer); clearTimeout(recWatch);
   const rate=recCtx.sampleRate, chunks=recBuf;
   try{ recProc.disconnect(); recSrc.disconnect(); }catch(e){}
   recStream.getTracks().forEach(t=>t.stop());
@@ -481,8 +518,10 @@ function stopRec(silent){
 }
 
 /* ================= 大话筒 = 语音总开关（点一下关，再点一下开） ================= */
-let abortCtl=null;
+let abortCtl=null, gestureUsedAt=0;
 function bigMic(){
+  // 这一下刚刚被用来解锁音频/补播了，就不再当成“切换开关”
+  if(Date.now()-gestureUsedAt<900) return;
   if(voiceOn){
     voiceOn=false;
     if(abortCtl) abortCtl.abort();
@@ -589,16 +628,23 @@ async function streamSend(extra){
 
 /* ================= 首次触摸解锁音频（浏览器自动播放限制） ================= */
 document.addEventListener("pointerdown", ()=>{
+  let used=false;
   if(recCtx && recCtx.state==="suspended"){
+    used=true;
     recCtx.resume().then(()=>{
       if(!recCtx) return;
-      recBuf=[]; speechSeen=false; silenceMs=0;
+      recBuf=[]; recFrames=0; speechSeen=false; silenceMs=0;
       setVS("listen");
-      armRecTimer();
+      setMicUI();
+      armRecTimer(); armFrameWatch();
     }).catch(()=>{});
   }
-  if(blockedText){ const t=blockedText; blockedText=""; speakReply(t); }
+  if(blockedText){ used=true; const t=blockedText; blockedText=""; speakReply(t); }
+  if(used) gestureUsedAt=Date.now();
 },{capture:true});
+/* 排障用：控制台输入 __xn.state() 看麦克风实时状态 */
+window.__xn={state:()=>({voiceOn, busy, recording:!!recCtx, ctxState:recCtx?recCtx.state:"-", frames:recFrames,
+  bufferedSec:recBuf.reduce((n,c)=>n+c.length,0)/(recCtx?recCtx.sampleRate:1)})};
 
 /* ================= 启动：加载中模态框（只有慢/失败才出现） -> 就绪直接进聊天 ================= */
 const boot=document.getElementById("boot"), bootT=document.getElementById("bootT"), bootS=document.getElementById("bootS"), bootRetry=document.getElementById("bootRetry");
