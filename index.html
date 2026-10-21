@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>陪诊小暖 · 老年人 AI 陪诊助手</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%231b6c80'/%3E%3Cpath d='M14 32h8l4-10 6 20 5-14 3 4h10' stroke='%23fff' stroke-width='4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* framed-sheet 方向 · face: 低饱和暖石 frame + 医疗青蓝 accent */
+  :root{
+    --ground:#f2f1ef; --surface:#ffffff; --raised:#f9f9f7; --active:#ebebe8;
+    --border:#e7e4dc; --rule:#eeece6;
+    --text:#1c1a17; --muted:#6b675f;
+    --accent:#1b6c80; --accent-deep:#15586a; --accent-wash:#eaf2f4;
+    --warm:#f0a184; --warm-deep:#e8946f;
+    --positive:#1e7a4f; --positive-wash:#e7f3ec;
+    --negative:#c0392b; --negative-wash:#fbeeec;
+    --warning:#92400e; --warning-wash:#fdf6e7;
+    --radius-card:12px; --radius-ctl:10px; --radius-sheet:16px;
+    --pad:16px; --gap:14px;
+    --font:"IBM Plex Sans","PingFang SC","HarmonyOS Sans SC","MiSans","Microsoft YaHei",system-ui,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{font-family:var(--font);background:var(--ground);color:var(--text);
+    font-size:17px;line-height:1.6;display:grid;grid-template-rows:auto 1fr auto}
+  body{overflow:hidden}
+  main{min-height:0}
+  button{font-family:inherit;cursor:pointer}
+  svg{display:block}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ---------- 顶栏（chrome） ---------- */
+  header{display:flex;align-items:center;gap:12px;padding:10px 16px 8px;
+    width:min(1000px,calc(100% - 16px));margin:0 auto}
+  .mark{width:40px;height:40px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--accent)}
+  .tt{flex:1;min-width:0}
+  .tt h1{font-size:19px;font-weight:600;letter-spacing:-.01em;line-height:1.25}
+  .tt p{font-size:13px;color:var(--muted);margin-top:1px}
+  .profile-btn{display:flex;align-items:center;gap:7px;height:44px;padding:0 14px;
+    background:var(--surface);border:1px solid var(--border);border-radius:999px;
+    font-size:15px;font-weight:500;color:var(--text)}
+  .profile-btn:active{background:var(--active)}
+  .icon-btn{width:44px;height:44px;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    background:var(--surface);border:1px solid var(--border);border-radius:999px;color:var(--text)}
+  .icon-btn:active{background:var(--active)}
+
+  /* ---------- 语音视图（默认） ---------- */
+  #voiceView{display:flex;flex-direction:column;overflow:hidden}
+  .stage{flex:none;display:flex;flex-direction:column;align-items:center;padding:18px 16px 4px}
+  .ip-wrap{position:relative;width:min(260px,62vw);aspect-ratio:236/212;display:grid;place-items:center;
+    scale:calc(1 + var(--amp,0)*.05)}
+  .ring{position:absolute;width:83%;aspect-ratio:1;border:2px solid var(--accent);
+    border-radius:50%;opacity:0;pointer-events:none}
+  #voiceView.listen .ring{animation:rip 1.7s ease-out infinite}
+  .ring.r2{animation-delay:.55s}.ring.r3{animation-delay:1.1s}
+  @keyframes rip{0%{transform:scale(.86);opacity:.4}100%{transform:scale(1.45);opacity:0}}
+  .ip{width:82%;position:relative;z-index:1;animation:breathe 3.4s ease-in-out infinite}
+  @keyframes breathe{50%{transform:translateY(5px)}}
+  .eye,.eyes,.mouth-talk{transform-box:fill-box;transform-origin:center}
+  .eyes{transition:transform .25s}
+  .eye{animation:blink 4.6s infinite}
+  @keyframes blink{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.12)}}
+  #voiceView.listen .eyes{transform:scale(1.15)}
+  #voiceView.think .eyes{transform:translate(-4px,-4px)}
+  #voiceView.think .bodyG{animation:sway 1.7s ease-in-out infinite;transform-box:fill-box;transform-origin:center bottom}
+  @keyframes sway{25%{transform:rotate(-2deg)}75%{transform:rotate(2deg)}}
+  .mouth-talk{display:none}
+  #voiceView.speak .mouth-smile{display:none}
+  #voiceView.speak .mouth-talk{display:block;animation:talk .34s ease-in-out infinite alternate}
+  @keyframes talk{from{transform:scaleY(.3)}to{transform:scaleY(1)}}
+  #voiceView.speak .bodyG{animation:bob .55s ease-in-out infinite alternate;transform-box:fill-box;transform-origin:center}
+  @keyframes bob{to{transform:translateY(-4px)}}
+  .status{font-size:18px;font-weight:500;text-align:center;min-height:1.6em;margin-top:8px}
+  .status.dim{color:var(--muted);font-weight:400}
+  .vchips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px;padding:0 12px}
+  .vchip{border:1px solid var(--border);background:var(--surface);border-radius:999px;
+    padding:10px 16px;font-size:16px;color:var(--text)}
+  .vchip:active{background:var(--active)}
+  .caps{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:10px 18px 4px}
+  .cwrap{max-width:680px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;justify-content:flex-end;gap:14px}
+  #capList{display:flex;flex-direction:column;gap:14px}
+  .cap .cl{font-size:13px;color:var(--muted);margin-bottom:3px}
+  .cap .ct{font-size:18px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+  .cap.bot-now .ct{background:var(--accent-wash);border-radius:12px;padding:9px 13px;display:inline-block}
+  .caps .card{margin-left:0;max-width:100%}
+  .pin{display:flex;align-items:center;justify-content:center;gap:7px;
+    padding:10px 0 8px;color:var(--muted);font-size:13px}
+  .pin svg{flex-shrink:0}
+
+  /* ---------- 语音底部（大话筒） ---------- */
+  footer.voice{display:flex;flex-direction:column;align-items:center;gap:9px;
+    padding:14px 16px calc(12px + env(safe-area-inset-bottom))}
+  #bigMic{width:78px;height:78px;border-radius:999px;border:none;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  #bigMic:active{background:var(--accent-deep)}
+  #bigMic.rec{background:var(--negative);animation:pulse 1.1s infinite}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+  .hint{font-size:13px;color:var(--muted);text-align:center}
+  .hf{border:none;background:none;color:var(--muted);font-size:13px;
+    text-decoration:underline;text-underline-offset:3px;padding:0}
+
+  /* ---------- 白纸消息区（文字模式） ---------- */
+  .sheet{margin:0 auto;width:min(1000px,calc(100% - 16px));background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--radius-sheet);overflow-y:auto;overscroll-behavior:contain}
+  .wrap{max-width:680px;margin:0 auto;padding:20px 18px 0;min-height:100%;
+    display:flex;flex-direction:column}
+  #list{display:flex;flex-direction:column;gap:14px;padding-bottom:12px}
+  .wrap .pin{margin-top:auto}
+  @media (max-width:560px){
+    header{width:100%}
+    .sheet{width:100%;border-radius:0;border-left:none;border-right:none}
+  }
+
+  /* 欢迎区 */
+  .intro h2{font-size:22px;font-weight:600;letter-spacing:-.01em;line-height:1.3}
+  .intro p{font-size:16px;color:var(--muted);margin-top:6px;max-width:34em}
+  /* 功能入口：两行列表行（非卡片） */
+  .entries{margin-top:14px}
+  .entry{display:flex;align-items:center;gap:14px;width:100%;text-align:left;
+    background:none;border:none;border-top:1px solid var(--rule);padding:14px 2px}
+  .entry:first-child{border-top:none}
+  .entry .eic{flex-shrink:0;color:var(--accent)}
+  .entry .etx{flex:1;min-width:0}
+  .entry .en{font-size:17px;font-weight:600}
+  .entry .ed{font-size:14px;color:var(--muted);margin-top:2px;line-height:1.45}
+  .entry .ear{color:var(--muted);flex-shrink:0}
+  .entry:active{background:var(--raised)}
+
+  /* 消息 */
+  .row{display:flex;gap:9px;align-items:flex-start}
+  .row.user{flex-direction:row-reverse}
+  .row .who{flex-shrink:0;display:flex;align-items:center;justify-content:center;
+    width:24px;height:24px;margin-top:14px;color:var(--accent)}
+  .row.user .who{color:var(--muted)}
+  .bubble{max-width:calc(100% - 42px);padding:12px 15px;border-radius:14px;
+    font-size:18px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+  .bot .bubble{background:var(--raised);border-bottom-left-radius:5px}
+  .user .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:5px}
+  .cursor{display:inline-block;width:3px;height:1.05em;background:var(--accent);
+    vertical-align:-2px;margin-left:2px;animation:bl .9s steps(1) infinite}
+  @keyframes bl{50%{opacity:0}}
+  .sysline{font-size:13px;color:var(--muted);text-align:center;padding:2px 0}
+
+  /* ---------- 结构化卡片 ---------- */
+  .card{max-width:calc(100% - 42px);margin-left:33px;border:1px solid var(--border);
+    border-radius:var(--radius-card);overflow:hidden}
+  .card-head{display:flex;align-items:baseline;gap:10px;padding:12px 16px 10px;border-bottom:1px solid var(--rule)}
+  .card-head .cht{font-size:17px;font-weight:600}
+  .card-head .chs{font-size:13px;color:var(--muted);margin-left:auto}
+  .card-body{padding:12px 16px 14px}
+  .kv{display:flex;gap:12px;padding:8px 0;border-top:1px solid var(--rule);font-size:16px}
+  .kv:first-child{border-top:none}
+  .kv .k{width:4.5em;flex-shrink:0;color:var(--muted)}
+  .kv .v{flex:1;font-weight:500}
+  .kv .v.big{font-size:19px;font-weight:600}
+  ul.pts{list-style:none}
+  ul.pts li{padding:7px 0 7px 16px;border-top:1px solid var(--rule);font-size:16px;position:relative}
+  ul.pts li:first-child{border-top:none}
+  ul.pts li::before{content:"";position:absolute;left:2px;top:16px;width:6px;height:6px;border-radius:2px;background:var(--accent)}
+  .alertline{background:var(--negative-wash);color:var(--negative);border-radius:var(--radius-ctl);
+    padding:10px 14px;font-size:16px;font-weight:600;margin-top:10px}
+  .med{border:1px solid var(--border);border-radius:var(--radius-ctl);padding:12px 14px;margin-top:10px}
+  .med:first-child{margin-top:0}
+  .med .mn{font-size:18px;font-weight:600}
+  .med .md{font-size:15px;color:var(--muted);margin-top:3px}
+  .med .mt{display:inline-block;margin-top:7px;background:var(--accent-wash);color:var(--accent-deep);
+    border-radius:6px;padding:3px 10px;font-size:14px;font-weight:600}
+  .warnbox{background:var(--warning-wash);border-radius:var(--radius-ctl);padding:10px 14px;margin-top:10px}
+  .warnbox .wt{font-size:14px;font-weight:600;color:var(--warning);margin-bottom:2px}
+  .warnbox li{list-style:none;font-size:15px;color:var(--warning);padding:3px 0}
+  .fubox{background:var(--raised);border-radius:var(--radius-ctl);padding:12px 14px;margin-top:10px;font-size:15px}
+  .fubox .ft{font-size:14px;font-weight:600;color:var(--muted);margin-bottom:4px}
+  .fubox b{font-size:17px}
+  .card-ops{display:flex;gap:10px;padding:0 16px 13px}
+  .card-ops button{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;height:44px;
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-ctl);
+    font-size:15px;font-weight:500;color:var(--accent-deep)}
+  .card-ops button:active{background:var(--accent-wash)}
+  .card-ops button:disabled{color:var(--muted)}
+
+  /* ---------- 底部（文字模式 chrome） ---------- */
+  footer.text{padding:12px 16px calc(10px + env(safe-area-inset-bottom))}
+  .fwrap{max-width:680px;margin:0 auto}
+  .quick{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .qchip{border:1px solid var(--border);background:var(--surface);border-radius:999px;
+    padding:8px 15px;font-size:15px;color:var(--text)}
+  .qchip:active{background:var(--active)}
+  .frow{display:flex;gap:10px;align-items:flex-end}
+  #mic{width:56px;height:56px;border-radius:999px;border:none;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  #mic:active{background:var(--accent-deep)}
+  #mic.rec{background:var(--negative);animation:pulse 1.1s infinite}
+  #txt{flex:1;min-width:0;border:1px solid var(--border);border-radius:var(--radius-ctl);
+    padding:15px 16px;font-size:18px;font-family:inherit;outline:none;background:var(--surface);
+    resize:none;height:56px}
+  #txt:focus{border-color:var(--accent)}
+  #send{height:56px;padding:0 22px;border-radius:var(--radius-ctl);border:none;
+    background:var(--accent);color:var(--surface);font-size:16px;font-weight:600;flex-shrink:0}
+  #send:active{background:var(--accent-deep)}
+  #send:disabled{opacity:.55}
+  .safety{font-size:12px;color:var(--muted);text-align:center;margin-top:9px}
+
+  /* ---------- 档案抽屉 ---------- */
+  #drawer{position:fixed;inset:0;background:rgba(28,26,23,.44);z-index:50;display:none}
+  #drawer.open{display:block}
+  .sheetp{position:absolute;left:0;right:0;bottom:0;background:var(--surface);
+    border-radius:20px 20px 0 0;max-height:86vh;overflow-y:auto;
+    padding:22px 18px calc(24px + env(safe-area-inset-bottom))}
+  .sheetp h2{font-size:20px;font-weight:600}
+  .sheetp .tip{font-size:14px;color:var(--muted);margin:4px 0 16px}
+  .fld{margin-bottom:14px}
+  .fld label{display:block;font-size:14px;font-weight:500;margin-bottom:7px}
+  .fld input,.fld textarea{width:100%;border:1px solid var(--border);border-radius:var(--radius-ctl);
+    padding:12px 14px;font-size:17px;font-family:inherit;outline:none;background:var(--surface)}
+  .fld textarea{height:74px;resize:none}
+  .fld input:focus,.fld textarea:focus{border-color:var(--accent)}
+  .sheet-ops{display:flex;gap:10px;margin-top:4px}
+  .sheet-ops button{flex:1;height:48px;border-radius:var(--radius-ctl);border:none;
+    font-size:16px;font-weight:600;background:var(--accent);color:#fff}
+  .sheet-ops #closeP{background:var(--surface);border:1px solid var(--border);color:var(--text)}
+
+  #toast{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:99;
+    background:var(--text);color:var(--surface);font-size:15px;border-radius:999px;
+    padding:10px 20px;display:none;max-width:86vw;text-align:center}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="mark" aria-hidden="true">
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 3-8 1.5 2H21"/></svg>
+  </div>
+  <div class="tt">
+    <h1>陪诊小暖</h1>
+    <p>诊前帮您说清，诊后帮您记住</p>
+  </div>
+  <button class="profile-btn" onclick="openDrawer()" aria-label="打开健康档案">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6a1 1 0 0 1 1 1v2H8V4a1 1 0 0 1 1-1z"/><rect x="5" y="6" width="14" height="15" rx="2"/><path d="M9 12h6M9 16h6"/></svg>
+    健康档案
+  </button>
+  <button class="icon-btn" id="modeBtn" onclick="toggleView()" aria-label="切换打字模式"></button>
+</header>
+
+<!-- ============ 语音视图（默认） ============ -->
+<main id="voiceView">
+  <div class="stage">
+    <div class="ip-wrap" id="ipWrap">
+      <span class="ring" aria-hidden="true"></span>
+      <span class="ring r2" aria-hidden="true"></span>
+      <span class="ring r3" aria-hidden="true"></span>
+      <svg class="ip" viewBox="0 0 220 208" aria-label="小暖">
+        <g class="bodyG">
+          <path d="M112 54 C102 36 132 30 127 47 C125 55 114 54 113 49" fill="none" stroke="#5a4f44" stroke-width="4" stroke-linecap="round"/>
+          <ellipse cx="110" cy="124" rx="70" ry="64" fill="#fffdfa" stroke="#e6dccd" stroke-width="3"/>
+          <circle cx="62" cy="124" r="10" fill="#f7c6b8" opacity=".8"/>
+          <circle cx="158" cy="124" r="10" fill="#f7c6b8" opacity=".8"/>
+          <g class="eyes">
+            <g class="eye"><circle cx="86" cy="108" r="7" fill="#4a4038"/></g>
+            <g class="eye"><circle cx="134" cy="108" r="7" fill="#4a4038"/></g>
+          </g>
+          <path class="mouth-smile" d="M96 130 Q110 142 124 130" fill="none" stroke="#4a4038" stroke-width="4" stroke-linecap="round"/>
+          <ellipse class="mouth-talk" cx="110" cy="135" rx="10" ry="9" fill="#7a4a42"/>
+          <path d="M66 148 C66 176 92 187 110 187 C128 187 154 176 154 148" fill="none" stroke="#1b6c80" stroke-width="4.5" stroke-linecap="round"/>
+          <circle cx="110" cy="186" r="9" fill="#fff" stroke="#1b6c80" stroke-width="3"/>
+        </g>
+      </svg>
+    </div>
+    <div class="status" id="status"></div>
+    <div class="vchips" id="vchips"></div>
+  </div>
+  <div class="caps" id="capScrollBox">
+    <div class="cwrap">
+      <div id="capList"></div>
+      <div class="pin" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        对话和健康档案只保存在这台手机里，不会上传云端
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ============ 文字视图 ============ -->
+<main id="textView" style="display:none">
+  <div class="sheet" id="chat">
+    <div class="wrap">
+      <div id="list"></div>
+      <div class="pin" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        对话和健康档案只保存在这台手机里，不会上传云端
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ============ 语音底部 ============ -->
+<footer class="voice" id="vFoot">
+  <button id="bigMic" onclick="bigMic()" aria-label="按一下说话">
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+  </button>
+  <div class="hint" id="hint">说完停一停，我会一直听您说</div>
+  <button class="hf" id="hfBtn" onclick="toggleHf()">免提模式：开（点我关）</button>
+</footer>
+
+<!-- ============ 文字底部 ============ -->
+<footer class="text" id="tFoot" style="display:none">
+  <div class="fwrap">
+    <div class="quick" id="quick"></div>
+    <div class="frow">
+      <button id="mic" onclick="toggleRec()" aria-label="按一下说话" hidden>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      </button>
+      <textarea id="txt" rows="1" placeholder="说说情况，或打字"></textarea>
+      <button id="send" onclick="sendFromBox()">发送</button>
+    </div>
+    <div class="safety">小暖只帮您整理和提醒，不做诊断、不推荐药物；紧急情况请拨打 120</div>
+  </div>
+</footer>
+
+<div id="drawer" role="dialog" aria-label="健康档案">
+  <div class="sheetp">
+    <h2>健康档案</h2>
+    <div class="tip">只存在您自己的手机里，不会上传云端。填写后小暖每次都会记得。</div>
+    <div class="fld"><label for="p_name">怎么称呼</label><input id="p_name" placeholder="如：王阿姨"></div>
+    <div class="fld"><label for="p_age">年龄和性别</label><input id="p_age" placeholder="如：72岁 女"></div>
+    <div class="fld"><label for="p_hist">既往病史（手术、慢性病等）</label><textarea id="p_hist" placeholder="如：2021年心脏支架；高血压10年"></textarea></div>
+    <div class="fld"><label for="p_med">现在每天吃的药</label><textarea id="p_med" placeholder="如：阿司匹林每天1片；降压药早1粒"></textarea></div>
+    <div class="fld"><label for="p_alg">药物过敏</label><textarea id="p_alg" placeholder="如：青霉素过敏"></textarea></div>
+    <div class="fld"><label for="p_exam">近期检查</label><textarea id="p_exam" placeholder="如：2025年8月心电图"></textarea></div>
+    <div class="sheet-ops"><button id="saveP" onclick="saveProfile()">保存</button><button id="closeP" onclick="closeDrawer()">关闭</button></div>
+  </div>
+</div>
+
+<div id="toast" role="status"></div>
+
+<script>
+/* ================= 基础状态 ================= */
+const API = "/companion";
+let cid = localStorage.getItem("xn_cid") || (()=>{ const v="c-"+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem("xn_cid",v); return v; })();
+let caps = {asr:false, tts:false};
+let profile = JSON.parse(localStorage.getItem("xn_profile")||"{}");
+let view = "voice", busy = false, handsfree = true;
+const ICON = {
+  stetho:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v6a5 5 0 0 0 10 0V3"/><path d="M9 14v3a4 4 0 0 0 8 0v-2"/><circle cx="17" cy="12" r="2.5"/></svg>',
+  pill:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="18" height="7" rx="3.5" transform="rotate(-30 12 12.5)"/><path d="M9.5 7.5l5 8.5"/></svg>',
+  folder:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg>',
+  chev:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  bot:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12 3-8 1.5 2H21"/></svg>',
+  user:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
+  spk:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 6a9 9 0 0 1 0 12"/></svg>',
+  copy:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  keyboard:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg>',
+  wave:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg>'
+};
+
+/* ================= 档案 ================= */
+function profileText(){
+  const p=[];
+  if(profile.name) p.push("称呼："+profile.name);
+  if(profile.age) p.push("年龄性别："+profile.age);
+  if(profile.hist) p.push("既往病史："+profile.hist);
+  if(profile.med) p.push("在服药物："+profile.med);
+  if(profile.alg) p.push("药物过敏："+profile.alg);
+  if(profile.exam) p.push("近期检查："+profile.exam);
+  return p;
+}
+function openDrawer(){
+  p_name.value=profile.name||""; p_age.value=profile.age||""; p_hist.value=profile.hist||"";
+  p_med.value=profile.med||""; p_alg.value=profile.alg||""; p_exam.value=profile.exam||"";
+  drawer.classList.add("open");
+}
+function closeDrawer(){ drawer.classList.remove("open"); }
+function saveProfile(){
+  profile={name:p_name.value.trim(),age:p_age.value.trim(),hist:p_hist.value.trim(),med:p_med.value.trim(),alg:p_alg.value.trim(),exam:p_exam.value.trim()};
+  localStorage.setItem("xn_profile",JSON.stringify(profile));
+  closeDrawer(); toast("档案已保存（只存在本机）");
+}
+
+/* ================= 视图与状态机 ================= */
+const voiceView=document.getElementById("voiceView"), textView=document.getElementById("textView");
+const vFoot=document.getElementById("vFoot"), tFoot=document.getElementById("tFoot");
+const modeBtn=document.getElementById("modeBtn"), statusEl=document.getElementById("status");
+function setView(v){
+  view=v;
+  voiceView.style.display = v==="voice"?"flex":"none";
+  vFoot.style.display = v==="voice"?"flex":"none";
+  textView.style.display = v==="text"?"block":"none";
+  tFoot.style.display = v==="text"?"block":"none";
+  modeBtn.innerHTML = v==="voice"?ICON.keyboard:ICON.wave;
+  modeBtn.setAttribute("aria-label", v==="voice"?"切换到打字模式":"回到语音模式");
+}
+function toggleView(){ stopRec(true); interruptSpeak(); setView(view==="voice"?"text":"voice"); }
+const STATUS={
+  idle:"点一下话筒，跟我说",
+  idleFresh:"您好，我是小暖 · 点话筒开始",
+  listen:"在听您说…（说完停一停就好）",
+  think:"小暖在想…",
+  speak:"小暖在说…（点话筒可以打断）"
+};
+function setVS(s){
+  voiceView.classList.remove("listen","think","speak");
+  if(s==="listen"||s==="think"||s==="speak") voiceView.classList.add(s);
+  statusEl.textContent = STATUS[s]||STATUS.idle;
+  statusEl.classList.toggle("dim", s==="idle"||s==="idleFresh");
+}
+
+/* ================= 语音字幕流 ================= */
+const capList=document.getElementById("capList"), capScrollBox=document.getElementById("capScrollBox");
+function capScroll(){ capScrollBox.scrollTop=capScrollBox.scrollHeight; }
+function capUser(t){
+  const d=document.createElement("div"); d.className="cap user";
+  d.innerHTML=`<div class="cl">您</div><div class="ct"></div>`;
+  d.querySelector(".ct").textContent=t; capList.appendChild(d); capScroll(); return d;
+}
+function capBot(t,now){
+  const old=capList.querySelector(".bot-now"); if(old) old.classList.remove("bot-now");
+  const d=document.createElement("div"); d.className="cap bot"+(now?" bot-now":"");
+  d.innerHTML=`<div class="cl">小暖</div><div class="ct"></div>`;
+  d.querySelector(".ct").textContent=t; capList.appendChild(d); capScroll(); return d;
+}
+function capHost(){ return capList; }
+
+/* ================= 文字视图消息渲染 ================= */
+const list=document.getElementById("list");
+function scrollBottom(force){
+  const c=document.getElementById("chat");
+  if(force || c.scrollHeight-c.scrollTop-c.clientHeight<160) c.scrollTop=c.scrollHeight;
+}
+function addUser(t){
+  const d=document.createElement("div"); d.className="row user";
+  d.innerHTML=`<div class="who">${ICON.user}</div><div class="bubble"></div>`;
+  d.querySelector(".bubble").textContent=t; list.appendChild(d); scrollBottom(true);
+}
+let botRow=null, botBub=null, buf="", rafId=null, pending=[];
+function newBot(){ botRow=document.createElement("div"); botRow.className="row bot";
+  botRow.innerHTML=`<div class="who">${ICON.bot}</div><div class="bubble"></div>`;
+  botBub=botRow.querySelector(".bubble"); list.appendChild(botRow); buf=""; renderBot();
+}
+function renderBot(){
+  botBub.textContent=buf;
+  if(pending.length>0){ const c=document.createElement("span"); c.className="cursor"; botBub.appendChild(c); }
+  scrollBottom(false);
+}
+function tick(){
+  if(pending.length===0){ rafId=null; renderBot(); return; }
+  const take=Math.min(pending.length, Math.max(2, Math.ceil(pending.length/28)));
+  buf+=pending.splice(0,take).join("");
+  renderBot(); rafId=requestAnimationFrame(tick);
+}
+function botSay(t){
+  pending.length=0; if(rafId) cancelAnimationFrame(rafId);
+  if(!botRow) newBot();
+  buf=""; pending=t.split(""); rafId=requestAnimationFrame(tick);
+}
+function botAppend(t){
+  pending.push(...t.split(""));
+  if(!rafId) rafId=requestAnimationFrame(tick);
+}
+function finishBot(){ pending.length=0; if(rafId){cancelAnimationFrame(rafId); rafId=null;} buf=buf.replace(/\s+$/,""); renderBot(); }
+
+/* ================= 卡片渲染（两个视图共用） ================= */
+function esc(s){ const d=document.createElement("div"); d.textContent=s==null?"":String(s); return d.innerHTML; }
+function cardText(c){
+  if(c.type==="summary"){
+    const L=[];
+    if(c.patient_name) L.push("患者："+c.patient_name+(c.age?" "+c.age:"")+(c.gender?" "+c.gender:""));
+    L.push("主诉："+(c.chief_complaint||""));
+    (c.timeline||[]).forEach(x=>L.push("时间线："+x));
+    (c.history||[]).forEach(x=>L.push("既往："+x));
+    (c.medications||[]).forEach(x=>L.push("在服："+x));
+    if(c.allergies&&c.allergies.length) L.push("过敏："+c.allergies.join("；"));
+    if(c.last_exam) L.push("近期检查："+c.last_exam);
+    return "病史摘要卡\n"+L.join("\n");
+  }
+  if(c.type==="post"){
+    const L=["医嘱整理"];
+    (c.medications||[]).forEach(m=>L.push(`${m.name}：${m.dosage||""}，${m.frequency||""}，${m.timing||""}${m.notes?"（"+m.notes+"）":""}`));
+    (c.warnings||[]).forEach(w=>L.push("注意："+w));
+    if(c.follow_up&&c.follow_up.department) L.push(`复诊：${c.follow_up.department} ${c.follow_up.time_hint||""}${(c.follow_up.bring||[]).length?"，带："+c.follow_up.bring.join("、"):""}`);
+    return L.join("\n");
+  }
+  return JSON.stringify(c);
+}
+function renderCard(c){
+  if(view==="text") finishBot();
+  const d=document.createElement("div"); d.className="card";
+  let body="";
+  if(c.type==="summary"){
+    const kv=(k,v,big)=>v?`<div class="kv"><span class="k">${k}</span><span class="v${big?" big":""}">${esc(v)}</span></div>`:"";
+    body=`<div class="card-head"><span class="cht">病史摘要卡</span><span class="chs">就诊时给医生看</span></div><div class="card-body">
+      ${kv("主诉",c.chief_complaint,true)}
+      ${(c.timeline&&c.timeline.length)?`<div class="kv"><span class="k">时间线</span><span class="v"><ul class="pts">${c.timeline.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></span></div>`:""}
+      ${(c.history&&c.history.length)?kv("既往病史",c.history.join("；")):""}
+      ${(c.medications&&c.medications.length)?kv("在服药物",c.medications.join("；")):""}
+      ${(c.allergies&&c.allergies.length)?`<div class="alertline">药物过敏：${esc(c.allergies.join("；"))} — 一定要告诉医生</div>`:""}
+      ${kv("近期检查",c.last_exam)}
+      ${(c.patient_name||c.age)?`<div class="kv"><span class="k">患者</span><span class="v">${esc([c.patient_name,c.age,c.gender].filter(Boolean).join(" · "))}</span></div>`:""}
+    </div>`;
+  } else if(c.type==="post"){
+    body=`<div class="card-head"><span class="cht">医嘱整理</span><span class="chs">照这个来，不用记</span></div><div class="card-body">
+      ${(c.medications||[]).map(m=>`<div class="med"><div class="mn">${esc(m.name)}</div><div class="md">${esc([m.dosage,m.frequency].filter(Boolean).join(" · "))}</div>${m.timing?`<div class="mt">${esc(m.timing)}</div>`:""}${m.notes?`<div class="md">${esc(m.notes)}</div>`:""}</div>`).join("")}
+      ${(c.warnings&&c.warnings.length)?`<div class="warnbox"><div class="wt">要注意</div><ul>${c.warnings.map(w=>`<li>${esc(w)}</li>`).join("")}</ul></div>`:""}
+      ${(c.follow_up&&c.follow_up.department)?`<div class="fubox"><div class="ft">复诊提醒</div><b>${esc(c.follow_up.department)} ${esc(c.follow_up.time_hint||"")}</b>${(c.follow_up.bring||[]).length?`<div>要带：${esc(c.follow_up.bring.join("、"))}</div>`:""}${c.follow_up.notes?`<div>${esc(c.follow_up.notes)}</div>`:""}</div>`:""}
+    </div>`;
+  } else return;
+  d.innerHTML=body+`<div class="card-ops">${caps.tts?`<button onclick="speak(this)">${ICON.spk}念给我听</button>`:""}<button onclick="copyCard(this)">${ICON.copy}复制给医生</button></div>`;
+  d.dataset.ctext=cardText(c);
+  if(view==="text"){ list.appendChild(d); scrollBottom(true); }
+  else { capList.appendChild(d); capScroll(); }
+  const saved=JSON.parse(localStorage.getItem("xn_cards")||"[]"); saved.unshift({t:Date.now(),c}); localStorage.setItem("xn_cards",JSON.stringify(saved.slice(0,30)));
+}
+function copyCard(btn){
+  const t=btn.closest(".card").dataset.ctext;
+  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast("已复制，发给医生就行"),()=>{
+    const ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); toast("已复制");
+  });
+}
+async function speak(btn){
+  const t=btn.closest(".card").dataset.ctext;
+  btn.disabled=true;
+  try{
+    const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","makers-conversation-id":cid},body:JSON.stringify({action:"tts",text:t})});
+    if(!r.ok) throw 0;
+    const j=await r.json(); if(!j.audio) throw 0;
+    const a=new Audio("data:audio/wav;base64,"+j.audio); a.play();
+    btn.disabled=false;
+  }catch(e){ btn.disabled=false; toast("暂时念不了，请稍后再试"); }
+}
+function toast(msg){
+  const el=document.getElementById("toast"); el.textContent=msg; el.style.display="block";
+  clearTimeout(el._t); el._t=setTimeout(()=>el.style.display="none",1800);
+}
+
+/* ================= WAV 录音 + VAD 静音断句 ================= */
+let recCtx=null, recProc=null, recSrc=null, recStream=null, recBuf=[], recTimer=null;
+let speechSeen=false, silenceMs=0, lastAmp=0;
+async function startRec(){
+  if(recCtx) return;
+  if(!navigator.mediaDevices||!window.AudioContext){ toast("这个浏览器不支持录音，请用手机浏览器打开"); return; }
+  try{
+    recStream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}});
+    recCtx=new (window.AudioContext||window.webkitAudioContext)();
+    recBuf=[]; speechSeen=false; silenceMs=0;
+    recSrc=recCtx.createMediaStreamSource(recStream);
+    recProc=recCtx.createScriptProcessor(4096,1,1);
+    recProc.onaudioprocess=e=>{
+      const d=e.inputBuffer.getChannelData(0);
+      recBuf.push(new Float32Array(d));
+      let sum=0; for(let i=0;i<d.length;i++) sum+=d[i]*d[i];
+      const rms=Math.sqrt(sum/d.length);
+      const now=performance.now();
+      if(now-lastAmp>90){ lastAmp=now; document.getElementById("ipWrap").style.setProperty("--amp",Math.min(1,rms*7).toFixed(2)); }
+      if(rms>0.016){ speechSeen=true; silenceMs=0; }
+      else if(speechSeen){ silenceMs+=(4096/recCtx.sampleRate)*1000; if(silenceMs>1500) stopRec(); }
+    };
+    recSrc.connect(recProc); recProc.connect(recCtx.destination);
+    document.getElementById("bigMic").classList.add("rec");
+    document.getElementById("mic").classList.add("rec");
+    setVS("listen");
+    recTimer=setTimeout(stopRec,60000);
+  }catch(e){ recCtx=null; toast("需要麦克风权限才能说话"); }
+}
+function stopRec(silent){
+  if(!recCtx) return;
+  clearTimeout(recTimer);
+  const rate=recCtx.sampleRate, chunks=recBuf;
+  try{ recProc.disconnect(); recSrc.disconnect(); }catch(e){}
+  recStream.getTracks().forEach(t=>t.stop());
+  recCtx.close(); recCtx=null; recProc=null; recSrc=null; recStream=null; recBuf=[];
+  document.getElementById("bigMic").classList.remove("rec");
+  document.getElementById("mic").classList.remove("rec");
+  document.getElementById("ipWrap").style.setProperty("--amp",0);
+  if(silent) return;
+  const total=chunks.reduce((n,c)=>n+c.length,0);
+  if(total<rate*0.7){ if(view==="voice") setVS("idle"); toast("没录到声音，再试一次"); return; }
+  const pcm=new Float32Array(total); let off=0;
+  chunks.forEach(c=>{ pcm.set(c,off); off+=c.length; });
+  const blob=encodeWav(pcm,rate);
+  if(view==="voice") setVS("think");
+  blobToB64(blob).then(b64=>streamSend({audio:b64, mime:"audio/wav"}));
+}
+function toggleRec(){ if(recCtx){ stopRec(); return; } startRec(); }
+function bigMic(){
+  if(recCtx){ stopRec(); return; }        // 正在录：手动结束
+  if(voiceStateSpeaking()){ interruptSpeak(); }
+  if(busy) return;                        // 在想/在收：稍等
+  if(!caps.asr){ toast("这个浏览器不支持语音，用打字也可以"); return; }
+  startRec();
+}
+function voiceStateSpeaking(){ return voiceView.classList.contains("speak"); }
+function toggleHf(){
+  handsfree=!handsfree; setHfUI();
+  toast(handsfree?"免提开了，我一直听您说":"免提关了，说话前先点话筒");
+}
+function setHfUI(){
+  document.getElementById("hfBtn").textContent = handsfree ? "免提模式：开（点我关）" : "免提模式：关（点我开）";
+  document.getElementById("hint").textContent = handsfree ? "说完停一停，我会一直听您说" : "按一下说话 · 说完停一停就好";
+}
+function encodeWav(samples,rate){
+  const n=samples.length, buf=new ArrayBuffer(44+n*2), v=new DataView(buf);
+  const ws=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
+  ws(0,"RIFF"); v.setUint32(4,36+n*2,true); ws(8,"WAVE"); ws(12,"fmt ");
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,rate,true); v.setUint32(28,rate*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true);
+  ws(36,"data"); v.setUint32(40,n*2,true);
+  let o=44;
+  for(let i=0;i<n;i++,o+=2){ const s=Math.max(-1,Math.min(1,samples[i])); v.setInt16(o,s<0?s*32768:s*32767,true); }
+  return new Blob([buf],{type:"audio/wav"});
+}
+function blobToB64(blob){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.readAsDataURL(blob); }); }
+
+/* ================= 逐句 TTS 播报（预取 + 可打断） ================= */
+let interrupted=false, curAudio=null;
+const ttsMemo={};
+function splitSent(t){
+  return t.replace(/\s+/g," ").replace(/([。！？!?；;])/g,"$1\u0001").split("\u0001").map(s=>s.trim()).filter(Boolean);
+}
+function ttsFor(s){
+  return ttsMemo[s]||(ttsMemo[s]=(async()=>{
+    const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","makers-conversation-id":cid},body:JSON.stringify({action:"tts",text:s})});
+    if(!r.ok) throw new Error("tts");
+    const j=await r.json(); if(!j.audio) throw new Error("tts");
+    return j.audio;
+  })());
+}
+function interruptSpeak(){ interrupted=true; if(curAudio){ curAudio.pause(); curAudio=null; } }
+async function speakReply(text){
+  if(!caps.tts){ if(text) capBot(text); setVS("idle"); toast("语音念不了，您看下面的字"); return; }
+  const sents=splitSent(text); if(!sents.length) return;
+  interrupted=false; setVS("speak");
+  for(let i=0;i<sents.length;i++){
+    if(interrupted) return;
+    let b64;
+    try{ const p=ttsFor(sents[i]); if(sents[i+1]) ttsFor(sents[i+1]); b64=await p; }
+    catch(e){ capBot(sents.slice(i).join("")); setVS("idle"); toast("语音念不了了，您看下面的字"); return; }
+    if(interrupted) return;
+    capBot(sents[i], true);
+    await new Promise(res=>{ curAudio=new Audio("data:audio/wav;base64,"+b64); curAudio.onended=res; curAudio.onerror=res; curAudio.play().catch(res); });
+    curAudio=null;
+  }
+  if(!interrupted){
+    setVS("idle");
+    if(handsfree && view==="voice") setTimeout(()=>{ if(handsfree && view==="voice" && !recCtx && !busy) startRec(); }, 900);
+  }
+}
+
+/* ================= 请求（两个视图共用管道） ================= */
+async function streamSend(extra){
+  if(busy) return; busy=true;
+  const isVoice = view==="voice";
+  const reply={text:""};
+  if(isVoice) setVS("think"); else { document.getElementById("send").disabled=true; document.getElementById("txt").disabled=true; }
+  try{
+    const resp=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","makers-conversation-id":cid},
+      body:JSON.stringify(Object.assign({profile:profileText()},extra))});
+    if(!resp.ok){
+      const e=await resp.json().catch(()=>({}));
+      const m=e.error||("请求失败（"+resp.status+"）");
+      if(isVoice){ capBot(m); setVS("idle"); } else { botSay(m); }
+      return;
+    }
+    if(!isVoice) newBot();
+    const reader=resp.body.getReader(); const dec=new TextDecoder(); let bufS="";
+    while(true){
+      const {done,value}=await reader.read(); if(done) break;
+      bufS+=dec.decode(value,{stream:true});
+      const parts=bufS.split("\n\n"); bufS=parts.pop();
+      for(const p of parts){
+        const line=p.split("\n").find(l=>l.startsWith("data:")); if(!line) continue;
+        const dataStr=line.slice(5).trim(); if(dataStr==="[DONE]") continue;
+        let ev; try{ ev=JSON.parse(dataStr); }catch(e){ continue; }
+        if(ev.type==="asr"){ if(isVoice) capUser(ev.content); else addUser(ev.content); }
+        else if(ev.type==="ai_response"){ if(isVoice) reply.text+=ev.content; else botAppend(ev.content); }
+        else if(ev.type==="card") renderCard(ev.data);
+        else if(ev.type==="error_message"){
+          if(isVoice){ capBot(ev.content); setVS("idle"); } else { finishBot(); botSay(ev.content); }
+        }
+      }
+    }
+    finishBot();
+  }catch(e){
+    if(isVoice){ capBot("网络出了点问题，请再试一次"); setVS("idle"); }
+    else { finishBot(); botSay("网络出了点问题，请再试一次"); }
+  }finally{
+    busy=false;
+    if(!isVoice){ document.getElementById("send").disabled=false; document.getElementById("txt").disabled=false; showQuick(); }
+  }
+  if(isVoice && reply.text) await speakReply(reply.text);
+}
+function sendFromBox(){
+  const t=txt.value.trim(); if(!t) return;
+  hideEntries(); txt.value=""; addUser(t);
+  streamSend({message:t});
+}
+function entry(mode,label){
+  if(view==="text"){ hideEntries(); addUser(label); }
+  else { hideVChips(); capUser(label); }
+  streamSend({message:label, mode});
+}
+
+/* ================= 快捷 / 入口 ================= */
+function hideEntries(){ const e=document.getElementById("entries"); if(e) e.remove(); quick.style.display="none"; }
+function showQuick(){ if(view==="text") quick.style.display="flex"; }
+function hideVChips(){ const e=document.getElementById("vchips"); if(e) e.innerHTML=""; }
+function renderEntries(){
+  const w=document.createElement("div"); w.className="entries"; w.id="entries";
+  const nm=profile.name||"您";
+  const items=[
+    {ic:ICON.stetho, n:"看病前", d:"陪您把病情聊清楚，整理成摘要卡带给医生", go:()=>entry("pre","我想准备一下明天看病")},
+    {ic:ICON.pill, n:"看完医生", d:"把医嘱变成服药表和复诊提醒", go:()=>entry("post","我刚看完医生，医生说的话我打给你")},
+    {ic:ICON.folder, n:"问问健康档案", d:"今天吃什么药 · 复诊时间 · 注意什么", go:()=>entry("",`${nm}今天该吃什么药？什么时候复诊？`)},
+  ];
+  items.forEach(it=>{
+    const b=document.createElement("button"); b.className="entry";
+    b.innerHTML=`<span class="eic">${it.ic}</span><span class="etx"><span class="en">${it.n}</span><br><span class="ed">${it.d}</span></span><span class="ear">${ICON.chev}</span>`;
+    b.onclick=it.go; w.appendChild(b); 
+  });
+  list.appendChild(w); scrollBottom(true);
+}
+function renderVChips(){
+  const w=document.getElementById("vchips"); if(!w) return;
+  const nm=profile.name||"我";
+  const items=[
+    {n:"看病前想聊聊", go:()=>entry("pre","我想准备一下明天看病")},
+    {n:"刚看完医生", go:()=>entry("post","我刚看完医生，医生说的话我说给你")},
+    {n:"今天吃什么药", go:()=>entry("",`${nm}今天该吃什么药？什么时候复诊？`)},
+  ];
+  w.innerHTML="";
+  items.forEach(it=>{
+    const b=document.createElement("button"); b.className="vchip"; b.textContent=it.n; b.onclick=it.go; w.appendChild(b);
+  });
+}
+const quickRow=document.getElementById("quick");
+["我想准备看病","我刚看完医生","今天该吃什么药"].forEach(t=>{
+  const c=document.createElement("button"); c.className="qchip"; c.textContent=t;
+  c.onclick=()=>{ txt.value=t; sendFromBox(); }; quickRow.appendChild(c);
+});
+
+/* ================= 初始化 ================= */
+(async ()=>{
+  setView("voice"); setVS("idleFresh");
+  renderVChips();
+  let capsKnown=false;
+  try{
+    const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json","makers-conversation-id":cid},body:JSON.stringify({action:"caps"})});
+    if(r.ok){ caps=await r.json(); capsKnown=true; }
+  }catch(e){}
+  const who=profile.name||"您好";
+  const greet=`${who}，我是小暖。看病前，我陪您把病情聊清楚，整理成一张摘要卡带给医生；看完医生，我帮您把药和复诊安排列得明明白白。点下面的话筒，跟我说就行。`;
+  capBot(greet);
+  if(capsKnown && !caps.asr){
+    // 明确不支持语音：自动切打字模式
+    document.getElementById("bigMic").style.display="none";
+    setView("text"); newBot(); botSay(greet);
+    setTimeout(()=>{ finishBot(); renderEntries(); },1200);
+  } else if(capsKnown && !caps.tts){
+    document.getElementById("hint").textContent="按一下说话 · 语音念不出时看下面的字";
+  }
+})();
+</script>
+</body>
+</html>
