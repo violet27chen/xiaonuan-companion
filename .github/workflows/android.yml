@@ -41,7 +41,7 @@ jobs:
         with:
           tag_name: apk-v${{ github.run_number }}
           name: 陪诊小暖 APK v${{ github.run_number }}
-          body: 小暖 Android 原生应用 APK v1.3。登录后可使用原生文字/语音聊天、医嘱拍照识别、健康记录编辑与单项清除、用药提醒。下载 app-release.apk 安装即可；与已安装的同签名正式版可直接覆盖升级。首次安装需允许安装未知来源应用。
+          body: 小暖 Android 原生应用 APK v1.4。登录后可使用原生文字/语音聊天、语音控制拍照与字幕/语速、医嘱拍照识别、健康记录编辑与单项清除、用药提醒。下载 app-release.apk 安装即可；与已安装的同签名正式版可直接覆盖升级。首次安装需允许安装未知来源应用。
           files: android/app/build/outputs/apk/release/app-release.apk
 
       - name: Upload artifact

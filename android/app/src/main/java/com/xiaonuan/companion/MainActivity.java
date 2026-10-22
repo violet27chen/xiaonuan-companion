@@ -64,6 +64,8 @@ public class MainActivity extends Activity {
     private TextToSpeech tts;
     private boolean speakingReady;
     private boolean busy;
+    private boolean captionsLarge;
+    private boolean speakerEnabled=true;
     private String pendingText = "";
     private String pendingReminderJson = "[]";
     private JSONArray medications = new JSONArray();
@@ -77,6 +79,7 @@ public class MainActivity extends Activity {
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         prefs = getSharedPreferences("xiaonuan_native", MODE_PRIVATE);
+        captionsLarge=prefs.getBoolean("captions_large",false);
         tts = new TextToSpeech(this, result -> {
             if (result == TextToSpeech.SUCCESS) {
                 tts.setLanguage(Locale.SIMPLIFIED_CHINESE);
@@ -173,7 +176,26 @@ public class MainActivity extends Activity {
     private void sendText() {
         String text = input.getText().toString().trim(); if (text.isEmpty() || busy) return;
         input.setText(""); ((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(input.getWindowToken(), 0);
-        addBubble("您", text, true); ask(text);
+        handleInput(text);
+    }
+
+    private void handleInput(String text){
+        addBubble("您",text,true);
+        String t=text.replaceAll("[，。！？、,.!?\\s]","");String reply=null;
+        if(t.matches(".*(拍照|照张|药盒照片|医嘱照片|拍一下|看看这个药).*")){reply="我打开拍照入口了，您可以拍药盒或医嘱给我看。";addBubble("小暖",reply,false);pendingText=reply;speak(reply);choosePhoto();return;}
+        if(t.matches(".*(放大字幕|字幕大一点|字幕放大).*")){captionsLarge=true;prefs.edit().putBoolean("captions_large",true).apply();reply="字幕已经放大。";}
+        else if(t.matches(".*(字幕恢复|字幕小一点|关闭大字幕).*")){captionsLarge=false;prefs.edit().putBoolean("captions_large",false).apply();reply="字幕已经恢复。";}
+        else if(t.matches(".*(说慢点|慢一点|慢速朗读).*")){prefs.edit().putBoolean("slow",true).apply();if(tts!=null)tts.setSpeechRate(.82f);reply="好，我会说慢一点。";}
+        else if(t.matches(".*(自然语速|说快点|正常语速).*")){prefs.edit().putBoolean("slow",false).apply();if(tts!=null)tts.setSpeechRate(1f);reply="好，我会用自然语速说话。";}
+        else if(t.matches(".*(再听一次|再说一遍|重复刚才).*")){if(!pendingText.isEmpty()){speak(pendingText);return;}reply="还没有可以重听的内容。";}
+        else if(t.matches(".*(打开记录|查看记录|我的记忆|健康档案|用药记录).*")){reply="我打开您的记录了。";addBubble("小暖",reply,false);pendingText=reply;speak(reply);openRecords();return;}
+        else if(t.matches(".*(就诊前|看诊前|准备看医生).*")){prefs.edit().putString("mode","pre").apply();if(status!=null)status.setText("就诊前准备");reply="已经切到就诊前准备。";}
+        else if(t.matches(".*(就诊后|看诊后|整理医嘱).*")){prefs.edit().putString("mode","post").apply();if(status!=null)status.setText("就诊后整理");reply="已经切到就诊后整理。";}
+        else if(t.matches(".*(自动模式|自动识别).*")){prefs.edit().putString("mode","auto").apply();if(status!=null)status.setText("自动识别");reply="已经切回自动识别模式。";}
+        else if(t.matches(".*(关闭语音|不要读出来|静音).*")){speakerEnabled=false;reply="好的，我先关闭语音。";}
+        else if(t.matches(".*(打开语音|开启语音|读出来).*")){speakerEnabled=true;reply="好的，我会用语音回答。";}
+        if(reply!=null){addBubble("小暖",reply,false);pendingText=reply;speak(reply);return;}
+        ask(text);
     }
 
     private void ask(String message) {
@@ -227,7 +249,7 @@ public class MainActivity extends Activity {
             @Override public void onReadyForSpeech(Bundle params) { runOnUiThread(() -> micButton.setText("正在听…")); }
             @Override public void onResults(Bundle results) {
                 ArrayList<String> list = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                runOnUiThread(() -> { micButton.setText("🎙"); if (list != null && !list.isEmpty()) { String said = list.get(0); addBubble("您", said, true); ask(said); } });
+                runOnUiThread(() -> { micButton.setText("🎙"); if (list != null && !list.isEmpty()) handleInput(list.get(0)); });
             }
             @Override public void onError(int error) { runOnUiThread(() -> { micButton.setText("🎙"); if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) toast("没有听清，请再试一次"); }); }
             @Override public void onBeginningOfSpeech() {} @Override public void onRmsChanged(float rmsdB) {} @Override public void onBufferReceived(byte[] b) {}
@@ -386,11 +408,11 @@ public class MainActivity extends Activity {
     private TextView addBubble(String who,String value,boolean mine){
         LinearLayout wrap=column(); wrap.setGravity(mine?Gravity.END:Gravity.START);
         TextView label=text(who,11,MUTED,false); label.setPadding(dp(4),0,dp(4),dp(3));
-        TextView body=text(value,16,INK,false);body.setPadding(dp(14),dp(11),dp(14),dp(11));body.setBackground(round(mine?Color.rgb(224,241,236):Color.WHITE,18));body.setMaxWidth((int)(getResources().getDisplayMetrics().widthPixels*.82));
+        TextView body=text(value,captionsLarge?22:16,INK,false);body.setPadding(dp(14),dp(11),dp(14),dp(11));body.setBackground(round(mine?Color.rgb(224,241,236):Color.WHITE,18));body.setMaxWidth((int)(getResources().getDisplayMetrics().widthPixels*.82));
         add(wrap,label,0,2,0,0);add(wrap,body,0,0,0,10);messages.addView(wrap);chatScroll.post(()->chatScroll.fullScroll(View.FOCUS_DOWN));
         if(!mine)answerView=body; return body;
     }
-    private void speak(String text){if(!speakingReady||tts==null)return;tts.stop();tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"xiaonuan-reply");}
+    private void speak(String text){if(!speakerEnabled||!speakingReady||tts==null)return;tts.stop();tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"xiaonuan-reply");}
     private void setBusy(boolean value,Button button,String label){busy=value;if(button!=null){button.setEnabled(!value);button.setText(label);}}
     private LinearLayout page(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(0,dp(8),0,0);l.setBackgroundColor(BG);return l;}
     private LinearLayout column(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);return l;}
