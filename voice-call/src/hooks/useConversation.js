@@ -3,8 +3,8 @@ import { encodeWav, blobToBase64, splitSent } from "../lib/wav.js";
 import {
   probeCaps,
   askLive,
-  ttsWav,
-  playWav,
+  ttsStreamStart,
+  playStream,
   stopWav,
   speakWithVoice,
   stopVoice,
@@ -12,11 +12,14 @@ import {
   sleep,
 } from "../lib/ai.js";
 
-/* VAD：说话阈值 / 静音自动断句 / 最短 / 最长 */
-const SPEECH_RMS = 0.02;
-const SILENCE_MS = 1200;
+/* VAD：自适应噪音门限（吵环境自动抬高阈值，避免噪音顶着 0.02 永不触发静音）
+   / 静音自动断句 / 最短 / 最长 */
+const ABS_RMS = 0.012;    // 安静环境说话阈值下限
+const NOISE_RATIO = 3.0;  // 动态阈值 = max(ABS_RMS, 噪音底 × NOISE_RATIO)
+const SPEECH_HANG = 1.5;  // 触发说话的倍率（防抖，防边界抖动）
+const SILENCE_MS = 800;   // 停嘴多久判结束（1.2s 主观偏慢）
 const MIN_MS = 500;
-const MAX_MS = 20000;
+const MAX_MS = 15000;
 const FRAME = 4096;
 
 export const PHASE_TEXT = {
@@ -39,15 +42,25 @@ export function useConversation() {
   const [micOn, setMicOn] = useState(false);
   const [level, setLevel] = useState(0); // 0~1，驱动人物呼吸/嘴型
   const [subtitle, setSubtitle] = useState(null); // {who:"您"|"小暖", text}
+  const [cards, setCards] = useState([]); // 对话中生成的结构化卡片（最多留 5 张）
   const [demoMode, setDemoMode] = useState(false);
   const [micError, setMicError] = useState("");
+  const [mode, setSelectedMode] = useState("auto");
+  const [detectedMode, setDetectedMode] = useState("chat");
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+
+  function setMode(nextMode) {
+    setSelectedMode(nextMode);
+    setDetectedMode(nextMode === "auto" ? "chat" : nextMode);
+  }
 
   const ctxRef = useRef(null);
   const streamRef = useRef(null);
   const srcRef = useRef(null);
   const procRef = useRef(null);
   const recBufRef = useRef([]);
-  const vadRef = useRef({ speechSeen: false, silenceMs: 0 });
+  const vadRef = useRef({ speechSeen: false, silenceMs: 0, noiseFloor: 0.006, threshold: ABS_RMS });
   const recordingRef = useRef(false);
   const busyRef = useRef(false); // 一小轮对话（请求+播报）进行中
   const turnRef = useRef(0); // 回合令牌：打断/新一轮自增，旧循环据此退出
@@ -58,23 +71,26 @@ export function useConversation() {
   const demoRef = useRef(false);
   const graphReadyRef = useRef(false);
   const startingRef = useRef(false);
-  const startedRef = useRef(false);
 
   /* ================= 启动：能力探测，决定 live / demo ================= */
   useEffect(() => {
     let alive = true;
-    (async () => {
-      const q = new URLSearchParams(location.search).get("mode");
-      if (q === "demo" || q === "live") {
-        demoRef.current = q === "demo";
-      } else {
-        const caps = await probeCaps();
-        demoRef.current = !(caps && caps.asr);
-      }
-      if (!alive) return;
+    const q = new URLSearchParams(location.search).get("mode");
+    if (q === "demo" || q === "live") {
+      demoRef.current = q === "demo";
       setDemoMode(demoRef.current);
-      setPhase("idle");
-    })();
+      setPhase((current) => current === "boot" ? "idle" : current);
+    } else {
+      // 能力探测放到后台，不让手机网络稍慢就启动演示模式；只有服务明确报告未配置才降级。
+      demoRef.current = false;
+      setDemoMode(false);
+      setPhase((current) => current === "boot" ? "idle" : current);
+      probeCaps(12000).then((caps) => {
+        if (!alive || !caps) return;
+        demoRef.current = caps.asr === false;
+        setDemoMode(demoRef.current);
+      });
+    }
     return () => {
       alive = false;
     };
@@ -134,6 +150,9 @@ export function useConversation() {
 
   /* ================= VAD 收音 ================= */
   function onFrames(e) {
+    // ScriptProcessor 默认会把输入帧透传到 destination；静音输出，避免麦克风监听形成回授/电流声。
+    const output = e.outputBuffer?.getChannelData(0);
+    if (output) output.fill(0);
     if (!recordingRef.current) return;
     const d = e.inputBuffer.getChannelData(0);
     recBufRef.current.push(new Float32Array(d));
@@ -146,7 +165,13 @@ export function useConversation() {
       setLevel(Math.min(1, rms * 7));
     }
     const vad = vadRef.current;
-    if (rms > SPEECH_RMS) {
+    // 噪音底自适应：低于当前阈值的帧是环境声，EMA 更新噪音底与动态阈值。
+    // 环境越吵阈值越高，杜绝"噪音顶着固定阈值 → speechSeen 永真 → 录满 MAX_MS"。
+    if (rms < vad.threshold) {
+      vad.noiseFloor = vad.noiseFloor * 0.9 + rms * 0.1;
+      vad.threshold = Math.max(ABS_RMS, vad.noiseFloor * NOISE_RATIO);
+    }
+    if (rms > vad.threshold * SPEECH_HANG) {
       vad.speechSeen = true;
       vad.silenceMs = 0;
     } else if (vad.speechSeen) {
@@ -164,7 +189,7 @@ export function useConversation() {
     }
     clearTimeout(maxTimerRef.current);
     recBufRef.current = [];
-    vadRef.current = { speechSeen: false, silenceMs: 0 };
+    vadRef.current = { ...vadRef.current, speechSeen: false, silenceMs: 0 }; // 噪音底跨回合保留
     recordingRef.current = true;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => (t.enabled = true));
@@ -195,7 +220,7 @@ export function useConversation() {
       pcm.set(c, off);
       off += c.length;
     });
-    blobToBase64(encodeWav(pcm, rate))
+    blobToBase64(encodeWav(pcm, rate, 16000))
       .then((b64) => sendTurn(b64))
       .catch(() => beginListen());
   }
@@ -204,6 +229,7 @@ export function useConversation() {
   async function sendTurn(b64) {
     const token = ++turnRef.current;
     busyRef.current = true;
+    setMicError("");
     setPhase("think");
     setSubtitle(null);
     const sents = []; // 句子队列：随到随播
@@ -221,7 +247,7 @@ export function useConversation() {
         tail = tail.slice(m[0].length);
         if (!s) continue;
         sents.push(s);
-        if (!demoRef.current) ttsWav(s).catch(() => {}); // 边收边合成
+        if (!demoRef.current) ttsStreamStart(s); // 边收边发起流式合成，首音 ~0.7s
       }
     };
 
@@ -238,21 +264,26 @@ export function useConversation() {
         abortRef.current = new AbortController();
         text = await askLive(b64, {
           signal: abortRef.current.signal,
+          mode: modeRef.current,
+          onMode: (detected) => {
+            if (token === turnRef.current) setDetectedMode(detected);
+          },
           onAsr: (t) => {
             if (token === turnRef.current) {
               setSubtitle({ who: "您", text: t });
             }
           },
           onText,
+          onCard: (c) => {
+            if (token === turnRef.current && c) setCards((prev) => [...prev.slice(-4), c]);
+          },
         });
       }
     } catch (e) {
       if (token !== turnRef.current) return; // 已被打断/新一轮取代（播报器自行退出）
       // 服务不可用：自动降级演示模式，保证对话回路不断
-      demoRef.current = true;
-      setDemoMode(true);
-      await sleep(300);
-      text = demoReply();
+      setMicError("刚才没连上小暖服务，请检查网络后再说一次。");
+      text = "刚才连接不太稳定，您再说一次吧。";
       splitSent(text).forEach((s) => sents.push(s));
     }
     if (token !== turnRef.current) return;
@@ -265,7 +296,6 @@ export function useConversation() {
   /** 流式播报：句子随到随播；要说话了字幕才出现（与语音同步），首句开播才从"思考中"切到播报态 */
   async function speakStream(sents, token, isDone) {
     let i = 0;
-    let started = false;
     while (token === turnRef.current) {
       if (i >= sents.length) {
         if (isDone()) break; // 流结束（含无回复）
@@ -273,34 +303,28 @@ export function useConversation() {
         continue;
       }
       const sent = sents[i++];
-      if (demoRef.current) {
-        if (!started) {
-          started = true;
-          setPhase("speak");
-        }
+      setPhase("think");
+      setSubtitle(null);
+      let sentenceStarted = false;
+      const onStart = () => {
+        sentenceStarted = true;
+        setPhase("speak");
         setSubtitle({ who: "小暖", text: sent });
-        await speakWithVoice(sent);
+      };
+      if (demoRef.current) {
+        await speakWithVoice(sent, { onStart });
+        if (!sentenceStarted) setSubtitle({ who: "小暖", text: sent });
       } else {
-        // 先合成音频：合成好、即将发声的那一刻才上字幕，杜绝"文字先站一会儿才开口"
-        let b64 = null;
+        let played = false;
         try {
-          b64 = await ttsWav(sent);
+          played = (await playStream(sent, { onStart })) === "ended";
         } catch {}
         if (token !== turnRef.current) return;
-        if (i < sents.length) ttsWav(sents[i]).catch(() => {}); // 预取下一句
-        if (!started) {
-          started = true;
-          setPhase("speak");
+        if (i < sents.length) ttsStreamStart(sents[i]);
+        if (!played) {
+          await speakWithVoice(sent, { onStart });
+          if (!sentenceStarted) setSubtitle({ who: "小暖", text: sent });
         }
-        setSubtitle({ who: "小暖", text: sent });
-        let played = false;
-        if (b64) {
-          try {
-            played = (await playWav(b64)) === "ended";
-          } catch {}
-        }
-        if (token !== turnRef.current) return;
-        if (!played) await speakWithVoice(sent); // 自动播放被拦/TTS 失败 → 语音合成兜底
       }
     }
     if (token !== turnRef.current) return;
@@ -332,11 +356,12 @@ export function useConversation() {
     if (startingRef.current) return;
     startingRef.current = true;
     try {
+      // 移动浏览器只会在用户手势后尝试锁定；原生 Android 壳另由 Activity 固定竖屏。
+      if (screen.orientation?.lock) screen.orientation.lock("portrait").catch(() => {});
       await ensureGraph();
       micOnRef.current = true;
       setMicOn(true);
       setMicError("");
-      startedRef.current = true;
       if (busyRef.current) interruptTurn(); // 小暖正在说：打断，听您说
       beginListen();
     } catch (e) {
@@ -387,7 +412,7 @@ export function useConversation() {
       off += c.length;
     });
     setPhase("think"); // 立刻进入思考，不用等静音断句
-    blobToBase64(encodeWav(pcm, rate))
+    blobToBase64(encodeWav(pcm, rate, 16000))
       .then((b64) => sendTurn(b64))
       .catch(() => setPhase("idle"));
   }
@@ -417,16 +442,9 @@ export function useConversation() {
     return () => clearInterval(id);
   }, [phase]);
 
-  /* ================= 首次手势即开聊（点屏幕任意处） ================= */
-  useEffect(() => {
-    const kick = (e) => {
-      // 点到功能按钮上时不抢跑：交给按钮自己的开关逻辑，避免开麦/关麦相互抵消
-      if (e.target && e.target.closest && e.target.closest("button")) return;
-      if (phase === "idle" && !micOnRef.current && !startedRef.current) startMic();
-    };
-    window.addEventListener("pointerdown", kick, { capture: true });
-    return () => window.removeEventListener("pointerdown", kick, { capture: true });
-  }, [phase]);
+  function activateMic() {
+    if (!micOnRef.current) startMic();
+  }
 
   /* ================= 前后台切换：恢复被浏览器挂起的音频上下文 =================
      页面切后台时 Chrome 会挂起 AudioContext（onaudioprocess 停火，VAD 静默死亡），
@@ -490,5 +508,9 @@ export function useConversation() {
     []
   );
 
-  return { phase, micOn, level, subtitle, demoMode, micError, toggleMic };
+  function dismissCard(i) {
+    setCards((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  return { phase, micOn, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, mode, detectedMode, setMode };
 }

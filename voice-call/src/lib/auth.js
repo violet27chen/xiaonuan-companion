@@ -23,6 +23,7 @@ export function clearAuth() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   localStorage.removeItem(CID_KEY);
+  localStorage.removeItem("xn_profile");
 }
 
 /** 会话线 id：平台要求 6-36 位 [0-9a-zA-Z-_.]；必须每次请求都带 */
@@ -90,4 +91,19 @@ export async function logout() {
 
 export function fetchMemory() {
   return call("memory", { token: getToken() });
+}
+
+/** 保存编辑后的记忆（档案 / 用药提醒）；后端只覆盖传了的字段 */
+export function saveMemory(memory) {
+  return call("memory_save", { token: getToken(), memory });
+}
+
+/** 一键清空当前用户所有记忆 */
+export function clearMemory() {
+  return call("memory_clear", { token: getToken() });
+}
+
+/** 独立删除一条记忆记录 */
+export function deleteMemoryItem(item) {
+  return call("memory_item_delete", { token: getToken(), ...item });
 }

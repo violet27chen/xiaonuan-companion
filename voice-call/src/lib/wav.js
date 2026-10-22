@@ -1,5 +1,11 @@
-/** Float32 PCM -> WAV Blob（16bit 单声道，后端 ASR 直接吃 wav） */
-export function encodeWav(samples, sampleRate) {
+/** Float32 PCM -> WAV Blob（16bit 单声道，后端 ASR 直接吃 wav）
+ *  targetRate 给定且与采样率不同：先线性插值重采样再编码。
+ *  录音常为 44.1/48kHz，降到 ASR 标准 16k 可让上传体积缩小约 2/3，省移动网络上几百毫秒。 */
+export function encodeWav(samples, sampleRate, targetRate = 0) {
+  if (targetRate > 0 && targetRate !== sampleRate) {
+    samples = resampleLinear(samples, sampleRate, targetRate);
+    sampleRate = targetRate;
+  }
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
   const writeStr = (offset, str) => {
@@ -25,6 +31,21 @@ export function encodeWav(samples, sampleRate) {
     offset += 2;
   }
   return new Blob([view], { type: "audio/wav" });
+}
+
+/** 线性插值重采样（语音场景足够，比抽值保真） */
+function resampleLinear(samples, fromRate, toRate) {
+  const n = Math.max(1, Math.round((samples.length * toRate) / fromRate));
+  const out = new Float32Array(n);
+  const step = fromRate / toRate;
+  for (let i = 0; i < n; i++) {
+    const pos = i * step;
+    const i0 = Math.floor(pos);
+    const i1 = Math.min(i0 + 1, samples.length - 1);
+    const f = pos - i0;
+    out[i] = samples[i0] * (1 - f) + samples[i1] * f;
+  }
+  return out;
 }
 
 export function blobToBase64(blob) {

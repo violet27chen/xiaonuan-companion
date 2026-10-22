@@ -18,7 +18,8 @@ def get_model(env: dict, temperature: float = 0.3) -> ChatOpenAI:
             base_url=base_url,
             temperature=temperature,
             timeout=120,
-            streaming=False,
+            # 流式：回复随生成随出，首句立刻可以合成语音，不用等整段生成完
+            streaming=True,
         )
         try:
             # 关闭推理思考：首字延迟约减半（语音对话等不起）；老版本不支持该字段时退回默认

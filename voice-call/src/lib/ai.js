@@ -40,7 +40,7 @@ function checkAuth(resp) {
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** 能力探测：超时/失败返回 null（调用方据此降级演示模式） */
-export async function probeCaps(timeoutMs = 5000) {
+export async function probeCaps(timeoutMs = 12000) {
   try {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), timeoutMs);
@@ -57,22 +57,13 @@ export async function probeCaps(timeoutMs = 5000) {
   }
 }
 
-/** 健康档案：沿用旧前端的 localStorage 键，老用户的档案继续生效（无编辑 UI，仅随请求上传） */
-function profileFromStorage() {
-  try {
-    const p = JSON.parse(localStorage.getItem("xn_profile") || "{}");
-    return p && typeof p === "object" ? p : {};
-  } catch {
-    return {};
-  }
-}
-
-/** 发送一段语音，流式收取回复；onAsr 回调语音识别文本，onText 增量回调回复片段 */
-export async function askLive(b64, { onAsr, onText, signal } = {}) {
-  const resp = await post({ audio: b64, mime: "audio/wav", profile: profileFromStorage() }, signal);
+/** 发送一段语音，流式收取回复；onAsr 回调语音识别文本，onText 增量回调回复片段，onCard 回调结构化卡片 */
+export async function askLive(b64, { onAsr, onText, onCard, onMode, signal, mode = "auto" } = {}) {
+  const resp = await post({ audio: b64, mime: "audio/wav", mode }, signal);
   if (!resp.ok) {
     if (checkAuth(resp)) throw new Error("登录过期了，请重新登录");
-    throw new Error("http " + resp.status);
+    const errorBody = await resp.json().catch(() => ({}));
+    throw new Error(errorBody.error || "http " + resp.status);
   }
   const reader = resp.body.getReader();
   const dec = new TextDecoder();
@@ -96,10 +87,12 @@ export async function askLive(b64, { onAsr, onText, signal } = {}) {
         continue;
       }
       if (ev.type === "asr") onAsr && onAsr(ev.content);
+      else if (ev.type === "mode") onMode && onMode(ev.mode);
       else if (ev.type === "ai_response") {
         text += ev.content;
         onText && onText(ev.content); // 边收边断句播报，降低首句等待
       }
+      else if (ev.type === "card") onCard && onCard(ev.data);
       else if (ev.type === "error_message") throw new Error(ev.content || "服务出错");
     }
   }
@@ -130,9 +123,57 @@ export function ttsWav(text, signal) {
   return p;
 }
 
+/* ---------- TTS 预取与播放 ---------- */
+/** 预取完整音频；MiMo 流式片段在真机上存在不稳定表现，先使用已验证可回听的完整 MP3。 */
+export function ttsStreamStart(text) {
+  if (text) ttsWav(text).catch(() => {});
+}
+
 /* ---------- wav 播放（可打断） ---------- */
 let curAudio = null;
 let curResolve = null;
+let audioMuted = false;
+
+export function setAudioMuted(muted) {
+  audioMuted = !!muted;
+  if (curAudio) curAudio.muted = audioMuted;
+  if (audioMuted) stopVoice();
+}
+
+/** 只停当前播放（不取消预取流）：playStream 开头用来打断上一句 */
+function stopCurrent() {
+  if (curAudio) {
+    try {
+      curAudio.pause();
+    } catch {}
+  }
+  if (curResolve) curResolve("stopped");
+}
+
+/** 播放已预取的完整句子，等音频实际开始时再显示字幕。 */
+export function playStream(text, { onStart } = {}) {
+  stopCurrent();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (v) => {
+      if (settled) return;
+      settled = true;
+      curAudio = null;
+      curResolve = null;
+      resolve(v);
+    };
+    curResolve = finish;
+    ttsWav(text).then((b64) => {
+      if (settled) return;
+      const audio = new Audio("data:audio/mpeg;base64," + b64);
+      audio.muted = audioMuted;
+      curAudio = audio;
+      audio.onended = () => finish("ended");
+      audio.onerror = () => finish("error");
+      audio.play().then(() => onStart && onStart()).catch(() => finish("blocked"));
+    }).catch(() => finish("error"));
+  });
+}
 
 export function playWav(b64) {
   stopWav();
@@ -146,7 +187,8 @@ export function playWav(b64) {
       resolve(v);
     };
     curResolve = finish;
-    const a = new Audio("data:audio/wav;base64," + b64);
+    const a = new Audio("data:audio/mpeg;base64," + b64); // 后端已改返回 mp3
+    a.muted = audioMuted;
     curAudio = a;
     a.onended = () => finish("ended");
     a.onerror = () => finish("error");
@@ -164,9 +206,13 @@ export function stopWav() {
 }
 
 /* ---------- speechSynthesis 兜底播报 ---------- */
-export function speakWithVoice(text) {
+export function speakWithVoice(text, { onStart } = {}) {
   return new Promise((resolve) => {
     const synth = window.speechSynthesis;
+    if (audioMuted) {
+      resolve("muted");
+      return;
+    }
     if (!synth || !text) {
       setTimeout(resolve, Math.min(500 + text.length * 150, 2500));
       return;
@@ -186,6 +232,7 @@ export function speakWithVoice(text) {
       u.rate = 0.95;
       const zh = synth.getVoices().find((v) => /zh|cmn|Chinese/i.test(v.lang + " " + v.name));
       if (zh) u.voice = zh;
+      u.onstart = () => onStart && onStart();
       u.onend = () => finish("ended");
       u.onerror = () => finish("error");
       synth.speak(u);
@@ -201,11 +248,11 @@ export function stopVoice() {
 
 /* ---------- 演示模式预置回复（陪诊情景，轮换） ---------- */
 const DEMO_LINES = [
-  "您说，我听着呢。今天哪里不舒服？咱们不着急，慢慢说。",
-  "嗯，我知道了。我给您记下来，复查的事咱们提前一天提醒您。",
-  "好的，我明白了。就诊那天您带上医保卡和以前的检查单，我陪您去。",
-  "您慢慢说，不着急，我一直在这儿。要多注意休息，按时吃饭。",
-  "好的。这个药一天三次，饭后吃。可别忘了，我会提醒您的。",
+  "我在听呢，您慢慢说，想从哪儿聊起都可以。",
+  "嗯，我听明白了。我先按您刚才说的记下来。",
+  "好，我陪您把这件事一项一项理清楚。",
+  "您慢慢说，不着急，我会认真听着。",
+  "我记下来了，您接着说。",
 ];
 let demoIdx = 0;
 

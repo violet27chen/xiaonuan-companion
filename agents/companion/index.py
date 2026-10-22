@@ -4,11 +4,11 @@ import re
 import time
 import uuid
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 from . import _users
 from ._graph import build_graph
-from ._speech import speech_available, synthesize, transcribe
+from ._speech import speech_available, synthesize, synthesize_stream, transcribe
 
 DEMO_PATIENT = {"称呼": "叔叔阿姨"}
 
@@ -55,12 +55,58 @@ async def handler(ctx):
         mem["username"] = username
         return mem
 
+    # ---- 一键清空记忆 ----
+    if action == "memory_clear":
+        await _users.clear_memory(ctx, username)
+        return {"ok": True}
+
+    if action == "memory_item_delete":
+        try:
+            await _users.delete_memory_item(
+                ctx, username,
+                category=body.get("category") or "",
+                index=body.get("index"),
+                key=body.get("key"),
+                expected=body.get("expected"),
+            )
+        except ValueError as e:
+            return {"error": str(e)}, 400
+        return {"ok": True}
+
+        # ---- 记忆保存：前端编辑健康档案 / 用药记录 ----
+    if action == "memory_save":
+        data = body.get("memory") or {}
+        if not isinstance(data, dict):
+            return {"error": "memory 格式不对"}, 400
+        meds = data.get("medications")
+        if meds is not None and not isinstance(meds, list):
+            return {"error": "medications 格式不对"}, 400
+        await _users.save_memory(
+            ctx, username,
+            profile=_safe_profile(data.get("profile")) if "profile" in data else None,
+            medications=meds,
+            replace_medications=True,
+        )
+        return {"ok": True}
+
     # ---- 单独 TTS：把一段文字念出来（逐句预取合成用）----
     if action == "tts":
         text = (body.get("text") or "").strip()
         if not text:
             return {"error": "text is required"}, 400
+        if body.get("stream"):
+            # 流式：SSE 逐 chunk 转发音频片段（mp3），前端 MSE 边收边播，首音 ~0.7s
+            async def tts_gen():
+                _t = time.perf_counter()
+                n = 0
+                async for chunk_data in synthesize_stream(ctx.env, text):
+                    n += len(chunk_data)
+                    yield ctx.utils.sse({"type": "tts_chunk", "audio": chunk_data})
+                print(f"[latency] tts_stream={int((time.perf_counter() - _t) * 1000)}ms chars={len(text)} b64={n}", flush=True)
+            return ctx.utils.stream_sse(tts_gen())
+        _t_tts = time.perf_counter()
         audio = await synthesize(ctx.env, text)
+        print(f"[latency] tts={int((time.perf_counter() - _t_tts) * 1000)}ms chars={len(text)}", flush=True)
         if not audio:
             return {"error": "tts_unavailable"}, 503
         return {"audio": audio}
@@ -68,14 +114,16 @@ async def handler(ctx):
     message = (body.get("message") or "").strip()
     audio_b64 = body.get("audio") or ""
     mime = body.get("mime") or "audio/webm"
-    mode = (body.get("mode") or "").strip()  # 前端按钮显式指定 pre/post
-    profile = body.get("profile") or {}
+    mode = (body.get("mode") or "auto").strip()  # auto 自动识别；pre/post 为人工指定
 
     # ---- 语音输入：录音转写（失败降级提示）----
     from_audio = False
+    asr_ms = 0
     if not message and audio_b64:
         from_audio = True
+        _t_asr = time.perf_counter()
         message = await transcribe(ctx.env, audio_b64, mime)
+        asr_ms = int((time.perf_counter() - _t_asr) * 1000)
         if not message:
             return {"error": "语音没听清，麻烦再讲一遍"}, 422
 
@@ -87,12 +135,22 @@ async def handler(ctx):
     if cleaned:
         message = cleaned                # 传给模型的指令去掉唤醒称呼
 
+    # 自动模式优先识别清晰的就诊后医嘱，其次识别就诊前准备；普通聊天不强行套医疗流程。
+    if mode == "auto":
+        effective_mode = _detect_mode(message)
+    elif mode in {"pre", "post"}:
+        effective_mode = mode
+    else:
+        effective_mode = "auto"
+        effective_mode = _detect_mode(message)
+
     # 凭据校验
     if not ctx.env.get("AI_GATEWAY_API_KEY"):
         return {"error": "模型网关未配置（AI_GATEWAY_API_KEY）"}, 500
 
-    # 档案：来自前端本地存储；仅保留字符串/简单列表，限制体积
-    patient = _safe_profile(profile)
+    # 档案和用药记录从当前登录账号的服务端记忆读取，避免共享设备上的本地数据串号。
+    user_memory = await _users.load_memory(ctx, username)
+    patient = _safe_profile(user_memory.get("profile"))
 
     checkpointer = getattr(ctx.store, "langgraph_checkpointer", None) if ctx.store else None
     graph = build_graph(ctx.env, checkpointer=checkpointer)
@@ -100,28 +158,64 @@ async def handler(ctx):
     thread_id = _users.conv_id(username)
 
     async def gen():
+        t_req = time.perf_counter()
+        yield ctx.utils.sse({"type": "mode", "mode": effective_mode})
         if from_audio:
             yield ctx.utils.sse({"type": "asr", "content": heard})
 
         collected = []   # 本轮 AI 回复原文（记忆用）
         cards_seen = []  # 本轮生成的卡片
-        interview_seen = None
+        meds_seen = None
+        profile_updates_seen = {}
+
+        reply_streamed = False  # reply 节点是否已按 token 流过（兜底判断用）
+
+        # 图输入：带上已保存的用药清单，让模型知道之前的记录
+        existing_meds = user_memory.get("medications") or []
 
         async def stream_graph(tid: str):
-            nonlocal interview_seen
-            # 只用 updates 模式：每条 AI 消息随所属节点完成恰好出现一次。
-            # （messages 模式配非流式模型会把同一句话重复吐出来，导致一句话播两遍）
+            nonlocal meds_seen, profile_updates_seen, reply_streamed
             async for payload in graph.astream(
                 {
                     "messages": [HumanMessage(content=message)],
                     "patient": patient,
-                    **({"mode": mode} if mode in ("pre", "post") else {}),
+                    "medications": existing_meds,
+                    "mode": effective_mode,
                 },
                 config={"configurable": {"thread_id": tid}},
-                stream_mode="updates",
+                stream_mode=["messages", "updates"],
             ):
                 if ctx.request.signal.is_set():
                     break
+                # 多模式流的载荷格式随 langgraph 版本而变，两种都要认：
+                #   新版：("messages"|"updates", 数据)；旧版：messages -> (消息, 元数据)，updates -> {节点: 增量}
+                ch_mode = None
+                if isinstance(payload, tuple) and len(payload) == 2 and isinstance(payload[0], str):
+                    ch_mode, payload = payload
+                is_msg = ch_mode == "messages" or (
+                    ch_mode is None and isinstance(payload, tuple) and len(payload) == 2
+                )
+                if is_msg:
+                    # messages 通道：(消息块, 元数据)。只转发病程节点的 AI 文本 token 块；
+                    # 分类/结构化节点（triage/pre/post）的原始输出一律不透传；
+                    # 节点收尾回吐的整条消息（AIMessage，非 chunk）也跳过：内容已随 token 流过，
+                    # 防整句重复播报；messages 通道整体不可用时由 updates 的整条消息兜底。
+                    if not (isinstance(payload, tuple) and len(payload) == 2):
+                        continue
+                    m, meta = payload
+                    if not (isinstance(meta, dict) and meta.get("langgraph_node") == "reply"):
+                        continue
+                    # 只认流式 token 块。注意：langchain-core 1.x 的 AIMessageChunk.type 是
+                    # "AIMessageChunk" 而不是 "ai"，不能按 type 字符串判，用 isinstance
+                    if not isinstance(m, AIMessageChunk) or getattr(m, "tool_calls", None):
+                        continue
+                    content = m.content if isinstance(m.content, str) else json.dumps(m.content, ensure_ascii=False)
+                    if content.strip():
+                        reply_streamed = True
+                        collected.append(content)
+                        yield ctx.utils.sse({"type": "ai_response", "content": content})
+                    continue
+                # updates 模式：{节点: 增量}
                 for node, delta in (payload or {}).items():
                     if not delta:
                         continue
@@ -129,11 +223,16 @@ async def handler(ctx):
                     if card:
                         cards_seen.append(card)
                         yield ctx.utils.sse({"type": "card", "node": node, "data": card})
-                    iv = delta.get("interview")
-                    if iv:
-                        interview_seen = iv
+                    ms = delta.get("medications")
+                    if ms and isinstance(ms, list):
+                        meds_seen = ms
+                    profile_updates = delta.get("profile_updates")
+                    if isinstance(profile_updates, dict):
+                        profile_updates_seen.update(profile_updates)
+                    if node == "reply" and reply_streamed:
+                        continue  # 文本已随 token 流过，跳过整段防重复
                     for m in (delta.get("messages") or []):
-                        if getattr(m, "type", "") != "ai" or getattr(m, "tool_calls", None):
+                        if not isinstance(m, AIMessage) or getattr(m, "tool_calls", None):
                             continue
                         content = m.content if isinstance(m.content, str) else json.dumps(m.content, ensure_ascii=False)
                         if content.strip():
@@ -141,9 +240,12 @@ async def handler(ctx):
                             yield ctx.utils.sse({"type": "ai_response", "content": content})
 
         got = False
+        t_first = None
         try:
             async for chunk in stream_graph(thread_id):
                 got = True
+                if t_first is None:
+                    t_first = time.perf_counter()
                 yield chunk
         except Exception as e:
             if ctx.request.signal.is_set():
@@ -156,33 +258,59 @@ async def handler(ctx):
                 # 换一个全新 thread 重试一次：牺牲旧上下文换可用性
                 collected.clear()
                 cards_seen.clear()
-                interview_seen = None
+                meds_seen = None
                 try:
                     async for chunk in stream_graph(f"{thread_id}-r{uuid.uuid4().hex[:6]}"):
                         yield chunk
                 except Exception as e2:
                     yield ctx.utils.sse({"type": "error_message", "content": f"哎呀，小暖这边出了点小状况：{e2}"})
 
-        # 落记忆：档案 / 问诊进度 / 生成的卡片 / 最近的对话
+        # 落记忆：只增量写入本轮明确提到的档案，避免每轮用旧快照覆盖新档案。
         reply = "".join(collected).strip()
         if reply and not ctx.request.signal.is_set():
             await _users.save_memory(
                 ctx,
                 username,
-                profile=patient,
-                interview=interview_seen,
+                profile_updates=_safe_profile(profile_updates_seen),
+                medications=meds_seen,
                 cards=cards_seen,
                 heard=heard,
                 reply=reply,
             )
+        _first_ms = int((t_first - t_req) * 1000) if t_first else -1
+        print(f"[latency] asr={asr_ms}ms first={_first_ms}ms total={int((time.perf_counter() - t_req) * 1000)}ms heard={heard[:12]!r}", flush=True)
         yield ctx.utils.sse({"type": "ping", "ts": int(time.time() * 1000)})
         yield b"data: [DONE]\n\n"
 
     return ctx.utils.stream_sse(gen())
 
 
+def _detect_mode(text: str) -> str:
+    """仅按明确表达切换就诊流程；不确定时按普通聊天处理。"""
+    value = (text or "").lower()
+    post_cues = (
+        r"医生.{0,8}(说|让我|叫我|给我开|开了|开的|嘱咐)",
+        r"(刚|已经|刚刚)?看完(医生|病|门诊)",
+        r"(医嘱|处方|复诊|检查结果|化验结果)",
+        r"(药怎么吃|药一天吃几次|药什么时候吃|服药时间|吃药提醒)",
+        r"(我现在|我目前|我每天|我一直)(在)?(吃|服用).{0,10}(药|片|胶囊)",
+    )
+    pre_cues = (
+        r"(就诊前|看医生前|看病前|去医院前|准备(去|看|挂号))",
+        r"(打算|准备|明天要|一会儿要).{0,8}(看医生|看病|去医院|挂号|检查)",
+        r"(今天|明天|一会儿|下周).{0,6}(去医院|看医生|看病|门诊|挂号)",
+        r"怎么(跟|和)医生(说|讲|描述)|看医生(时|要).{0,6}(说|问)",
+        r"(预约门诊|挂号|要问医生|想问医生)",
+    )
+    if any(re.search(pattern, value) for pattern in post_cues):
+        return "post"
+    if any(re.search(pattern, value) for pattern in pre_cues):
+        return "pre"
+    return "chat"
+
+
 def _safe_profile(profile: dict) -> dict:
-    """只保留白名单字段与字符串/列表值，防止注入体积"""
+    """只保留短字符串和简单列表，限制档案输入体积。"""
     if not isinstance(profile, dict):
         return {}
     keep = {}
@@ -191,4 +319,4 @@ def _safe_profile(profile: dict) -> dict:
             keep[str(k)[:20]] = v.strip()[:300]
         elif isinstance(v, list) and v and all(isinstance(x, (str, int, float)) for x in v):
             keep[str(k)[:20]] = [str(x)[:100] for x in v[:8]]
-    return keep or DEMO_PATIENT
+    return keep

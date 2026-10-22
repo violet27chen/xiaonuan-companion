@@ -33,16 +33,16 @@ def profile_key(username: str) -> str:
     return f"xn:p:{_uid(username)}"
 
 
+def meds_key(username: str) -> str:
+    return f"xn:m:{_uid(username)}"
+
+
 def cards_key(username: str) -> str:
     return f"xn:c:{_uid(username)}"
 
 
-def interview_key(username: str) -> str:
-    return f"xn:i:{_uid(username)}"
-
-
 def recent_key(username: str) -> str:
-    return f"xn:m:{_uid(username)}"
+    return f"xn:r:{_uid(username)}"
 
 
 def _hash_pw(password: str, salt: bytes) -> str:
@@ -61,8 +61,8 @@ async def register(ctx, username: str, password: str):
     username = (username or "").strip()
     if not _USER_RE.match(username):
         return None, "用户名要2-20个字母、数字或汉字"
-    if not password or len(password) < 4:
-        return None, "密码至少4位"
+    if not password or len(password) < 8:
+        return None, "密码至少8位"
     if await kv.get(user_key(username)):
         return None, "这个用户名已经有人用了，换一个吧"
     salt = secrets.token_bytes(16)
@@ -127,19 +127,46 @@ async def logout(ctx, token: str):
         pass
 
 
-async def save_memory(ctx, username: str, *, profile=None, interview=None, cards=None, heard=None, reply=None):
+async def save_memory(ctx, username: str, *, profile=None, profile_updates=None, medications=None, cards=None, heard=None, reply=None, replace_medications=False):
     """把一轮对话里值得记住的东西按用户落下（KV 持久化，失败不影响对话）"""
     kv = _kv(ctx)
     if kv is None:
         return
     try:
-        if profile:
+        if profile is not None:
             await kv.set(profile_key(username), profile)
-        if interview:
-            await kv.set(
-                interview_key(username),
-                {k: v for k, v in interview.items() if not str(k).startswith("_")},
-            )
+        if profile_updates:
+            old_profile = await kv.get(profile_key(username)) or {}
+            if not isinstance(old_profile, dict):
+                old_profile = {}
+            old_profile.update(profile_updates)
+            await kv.set(profile_key(username), old_profile)
+        if medications is not None:
+            # 防御：参数不是 list（比如 dict 或其他脏数据）→ 重置
+            if not isinstance(medications, list):
+                medications = []
+            old = [] if replace_medications else (await kv.get(meds_key(username)) or [])
+            if not isinstance(old, list):
+                old = []
+            merged = []
+            for m in medications:
+                if not isinstance(m, dict) or not m.get("name"):
+                    continue
+                merged.append(m)
+            # 合并旧：保留旧列表中未被覆盖的药
+            old_names = {m.get("name") for m in merged if isinstance(m, dict)}
+            for om in old:
+                if isinstance(om, dict) and om.get("name") and om["name"] not in old_names:
+                    merged.append(om)
+            # 最终按药名去重（双重保险，防止 LangGraph checkpoint 带重复）
+            seen = set()
+            deduped = []
+            for m in merged:
+                key = (m.get("name") or "").strip()
+                if key and key not in seen:
+                    seen.add(key)
+                    deduped.append(m)
+            await kv.set(meds_key(username), deduped)
         if cards:
             old = await kv.get(cards_key(username)) or []
             if not isinstance(old, list):
@@ -160,16 +187,96 @@ async def save_memory(ctx, username: str, *, profile=None, interview=None, cards
 
 
 async def load_memory(ctx, username: str) -> dict:
-    """记忆面板数据：档案 / 问诊收集 / 保存的卡片 / 最近的对话"""
+    """记忆面板数据：档案 / 用药提醒 / 保存的卡片 / 最近的对话"""
     kv = _kv(ctx)
     if kv is None:
         return {}
-    out = {"profile": {}, "interview": {}, "cards": [], "recent": []}
+    out = {"profile": {}, "medications": [], "cards": [], "recent": []}
     try:
         out["profile"] = (await kv.get(profile_key(username))) or {}
-        out["interview"] = (await kv.get(interview_key(username))) or {}
+        out["medications"] = _sanitize_meds(await kv.get(meds_key(username)))
         out["cards"] = (await kv.get(cards_key(username))) or []
         out["recent"] = (await kv.get(recent_key(username))) or []
     except Exception:
         pass
     return out
+
+
+def _sanitize_meds(raw) -> list:
+    """加载用药时强制类型 + 按 name 去重（防御旧 schema 污染或 LangGraph checkpoint 带重复）"""
+    if not isinstance(raw, list):
+        return []
+    seen = set()
+    out = []
+    for m in raw:
+        if not isinstance(m, dict):
+            continue
+        key = (m.get("name") or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "name": key,
+            "dosage": (m.get("dosage") or "").strip(),
+            "frequency": (m.get("frequency") or "").strip(),
+            "timing": (m.get("timing") or "").strip(),
+            "notes": (m.get("notes") or "").strip(),
+            "reminder_times": [
+                value for value in (m.get("reminder_times") or [])
+                if isinstance(value, str) and re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value)
+            ][:4],
+        })
+    return out
+
+
+async def clear_memory(ctx, username: str):
+    """一键清空：档案、用药、卡片、最近对话都清掉（登录态保留）"""
+    kv = _kv(ctx)
+    if kv is None:
+        return
+    for key in (profile_key, meds_key, cards_key, recent_key):
+        try:
+            await kv.delete(key(username))
+        except Exception:
+            pass
+
+
+async def delete_memory_item(ctx, username: str, *, category: str, index=None, key=None, expected=None):
+    """只删除一条记忆；列表项携带预期内容，避免列表更新后误删别项。"""
+    kv = _kv(ctx)
+    if kv is None:
+        raise ValueError("服务存储不可用")
+    if category == "profile":
+        if not isinstance(key, str) or not key:
+            raise ValueError("档案项目不正确")
+        data = await kv.get(profile_key(username)) or {}
+        if isinstance(data, dict) and key in data:
+            del data[key]
+            await kv.set(profile_key(username), data)
+        return
+
+    storage_keys = {
+        "medications": meds_key(username),
+        "cards": cards_key(username),
+        "recent": recent_key(username),
+    }
+    storage_key = storage_keys.get(category)
+    if not storage_key:
+        raise ValueError("记忆类型不正确")
+    items = await kv.get(storage_key) or []
+    if not isinstance(items, list):
+        return
+    try:
+        idx = int(index)
+    except (TypeError, ValueError):
+        raise ValueError("记忆项目不正确")
+    if idx < 0 or idx >= len(items):
+        return
+    if expected is not None and items[idx] != expected:
+        # 发生并发新增/删除时按内容定位；完全相同的重复项只删除一条。
+        try:
+            idx = items.index(expected)
+        except ValueError:
+            return
+    items.pop(idx)
+    await kv.set(storage_key, items)

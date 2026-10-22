@@ -41,7 +41,7 @@ jobs:
         with:
           tag_name: apk-v${{ github.run_number }}
           name: 陪诊小暖 APK v${{ github.run_number }}
-          body: 正式签名包 app-release.apk，下载后直接安装（允许未知来源即可）。与此前 debug 包签名不同，需先卸载旧版再安装。
+          body: 小暖 Android 正式签名 APK v1.1。下载 app-release.apk 安装即可；与已安装的同签名正式版可直接覆盖升级。首次安装需允许安装未知来源应用。
           files: android/app/build/outputs/apk/release/app-release.apk
 
       - name: Upload artifact

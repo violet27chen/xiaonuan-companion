@@ -1,5 +1,9 @@
-# 陪诊小暖 LangGraph 图：分诊 -> 诊前追问 / 诊后医嘱 / 档案问答
+# 陪诊小暖 LangGraph 图：单节点统一回复
+# 产品定位：诊前/诊中不使用，诊后聊天告诉 AI 用药 → 自动保存吃药时间提醒，首页显示下次吃药时间
+# 后端：口播模型自由回复（流式），提取模型并行解析用药清单和下次吃药时间
+import asyncio
 import json
+import re
 from functools import partial
 from typing import Annotated, TypedDict
 
@@ -10,12 +14,9 @@ from pydantic import BaseModel, Field
 
 from ._llm import get_model
 
-MAX_INTERVIEW_TURNS = 8  # 追问轮数上限，防止无限循环
-
 # 回复会被直接合成语音念给老人听：不能带舞台提示，长短要克制
-VOICE_RULE = "【口播规矩】你的回复会被直接念出来：只说要出口的话，不要语气提示、舞台指示（如（轻柔地））、动作描写；一般一两个短句说完。"
+VOICE_RULE = "【口播规矩】你的回复会被直接念出来：只说要出口的话，不要语气提示、舞台指示（如（轻柔地））、动作描写；一般一两个短句说完。不要反复说『想聊身体的事随时开口』『有不舒服告诉我』这类固定客套话；用户没提身体或症状时，不要主动把话题引向身体或疾病。每轮只围绕用户刚说的内容自然回应；资料不足时只问一个具体问题，不需要追问时就简短回应，不强行加邀请或结束语。"
 
-INTERVIEW_KEYS = ["主诉", "起病时间", "症状变化", "加重或缓解因素", "伴随症状", "既往病史", "在服药物", "药物过敏", "近期检查"]
 
 # ---------------- 档案文本化 ----------------
 
@@ -32,28 +33,46 @@ def patient_block(patient: dict) -> str:
     return "\n".join(lines) if lines else "（暂无档案信息）"
 
 
+def meds_block(medications: list) -> str:
+    if not medications:
+        return "（还没保存用药提醒）"
+    lines = []
+    for m in medications:
+        if not isinstance(m, dict):
+            continue
+        parts = [m.get("name", ""), m.get("dosage", "")]
+        if m.get("frequency"):
+            parts.append(m["frequency"])
+        if m.get("timing"):
+            parts.append(f"（{m['timing']}）")
+        line = " ".join(p for p in parts if p).strip()
+        if line:
+            lines.append(line)
+    return "；".join(lines) if lines else "（还没保存用药提醒）"
+
+
 # ---------------- 结构化输出模型 ----------------
 
 
-class InterviewOut(BaseModel):
-    """诊前问诊单轮输出"""
+class ExtractOut(BaseModel):
+    """每轮后台提取：从自然对话补全长期档案与明确用药，不阻塞口播"""
 
-    reply: str = Field(description="对老人说的话，大白话、短句、一次最多问两个问题")
-    collected_update: dict = Field(default_factory=dict, description="本轮新提取到的信息，键取自预定义字段，没有就留空 dict")
-    done: bool = Field(description="关键信息是否已经收集足够，可以生成病史摘要卡")
+    profile_updates: dict = Field(
+        default_factory=dict,
+        description="只记录用户明确说出的、适合长期参考的本人信息，例如称呼、年龄、长期疾病、过敏史、居住地、行动/听力情况、沟通偏好。键为简短中文字段名，值为简短字符串或字符串列表。未明确的信息留空；短期症状放入 visit_summary，不作为长期档案。",
+    )
 
-
-class PostOut(BaseModel):
-    """诊后医嘱解析输出"""
-
-    reply: str = Field(description="跟老人确认的话，大白话")
-    medications: list[dict] = Field(default_factory=list, description="[{name 药名, dosage 剂量, frequency 频次, timing 服药时机, notes 备注}]")
-    warnings: list[str] = Field(default_factory=list, description="忌口、注意事项等提醒")
-    follow_up: dict | None = Field(default_factory=dict, description="{department 科室, time_hint 时间, bring 需要带的东西[], notes 备注}，没有复诊安排则留空 dict")
-
-
-class TriageOut(BaseModel):
-    mode: str = Field(description="pre 或 post 或 archive")
+    medications_added: list[dict] = Field(
+        default_factory=list,
+        description="本轮用户明确说自己正在使用、医生安排使用或明确要求记下的药物：[{name 药名, dosage 剂量（如1粒、半片）, frequency 频次（如 每天3次、早晚各1次）, timing 服药时机/时间（如 饭后半小时、早上8点）, reminder_times 明确说出的每日钟点列表（仅HH:MM格式）, notes 备注}]。药物提问、假设、他人用药不记；不明确的字段留空，不推测；不要把‘饭后’猜成具体钟点。",
+    )
+    next_dose_time: str = Field(default="", description="本轮确认的下次吃药时间（大白话，如 '今天晚上8点'、'明天早上饭后'），没有就留空")
+    warnings: list[str] = Field(default_factory=list, description="忌口、注意事项等大白话短句，没有留空")
+    follow_up: dict = Field(default_factory=dict, description="复诊提醒 {department, time_hint, bring[], notes}，没有空 dict")
+    visit_summary: dict = Field(
+        default_factory=dict,
+        description="诊前就诊摘要：仅整理用户明确说过的信息，字段为 symptoms（症状）、duration（持续时间）、history（既往情况）、current_meds（当前用药）、questions（想问医生的问题）、missing（建议就诊时补充的信息）；没有的信息留空，不推断、不诊断",
+    )
 
 
 # ---------------- State ----------------
@@ -61,161 +80,163 @@ class TriageOut(BaseModel):
 
 class CompanionState(TypedDict):
     messages: Annotated[list, add_messages]
-    patient: dict           # 前端传入的老人档案（本地存储摘要）
-    mode: str               # pre / post / archive / chat
-    interview: dict         # 诊前已收集信息（跨轮持久）
-    interview_done: bool
-    result_card: dict       # 本轮生成的结构化卡片 {"type": ..., ...}
+    patient: dict                 # 当前账号保存的健康档案
+    medications: list             # 当前账号保存的用药记录
+    result_card: dict             # 本轮生成的结构化卡片
+    mode: str                     # pre：诊前整理；post：诊后医嘱整理
 
 
 # ---------------- 节点 ----------------
 
 
-async def triage_node(state: CompanionState, env: dict):
-    """自由输入时判断模式；前端按钮显式指定 pre/post 时直接放行，不浪费一次调用"""
-    if state.get("mode") in ("pre", "post"):
-        return {}
-    last = state["messages"][-1].content
-    prompt = (
-        "判断这位用户在陪诊场景下的需求属于哪一类：\n"
-        "pre=看病前的病情整理/问诊准备；post=刚看完医生，需要整理医嘱/处方/服药安排；"
-        "archive=询问健康档案里的信息或健康常识问答。\n"
-        f"用户输入：{last}\n只输出JSON：{{\"mode\": \"pre|post|archive\"}}"
-    )
-    try:
-        out = await get_model(env, 0).with_structured_output(TriageOut).ainvoke(prompt)
-        return {"mode": out.mode}
-    except Exception:
-        return {"mode": "archive"}
+async def reply_node(state: CompanionState, env: dict):
+    """统一回复节点：口播模型自由说，提取模型并行更新用药/提醒"""
+    meds_so_far = list(state.get("medications") or [])
 
-
-async def pre_node(state: CompanionState, env: dict):
-    """诊前：记者式追问循环，收齐后生成病史摘要卡"""
-    interview = dict(state.get("interview") or {})
-    turns = len(interview.get("_turns", [])) + 1
-    collected_txt = json.dumps({k: v for k, v in interview.items() if not k.startswith("_")}, ensure_ascii=False)
-
+    requested_mode = state.get("mode")
+    mode = requested_mode if requested_mode in {"pre", "post", "chat"} else "chat"
+    mode_rule = {
+        "pre": "当前是就诊前准备：帮助用户整理已明确说出的症状、持续时间、既往情况、当前用药和想问医生的问题；不诊断、不推测病因、不推荐治疗。资料不全时提醒用户就诊时补充。",
+        "post": "当前是就诊后整理：仅按用户转述的医生医嘱整理药物、注意事项和复诊安排；不自行补充剂量、不改医嘱。",
+        "chat": "当前是日常聊天：自然回应用户当下的话题，不主动把普通话题引向疾病；如果用户提到就医或用药，按其实际需要提供整理帮助。",
+    }[mode]
+    task_reply_rule = {
+        "pre": "优先用一两个短句复述并核对刚才提到的就诊信息。",
+        "post": "把已明确转述的药物安排逐条复述，请用户核对；没有说清的剂量和时间要标明待确认，不要猜。",
+        "chat": "自然回应当前内容，避免套用固定问候或医疗话术；需要健康信息时只问一个具体问题。",
+    }[mode]
     sys = (
-        "你是 AI 陪诊员「小暖」，正在帮一位老人做看病前的病情整理。你的任务是像有耐心的记者一样，"
-        "通过几轮轻松的聊天，把看病要用的关键信息收集齐。\n"
-        "【说话规矩】用大白话，短句，像晚辈聊天；一次最多问两个问题；老人答不上来的别追问，记为没问出来；"
-        "语气温暖，先接住对方的话再问。\n"
-        "【要收集的关键字段】" + "、".join(INTERVIEW_KEYS) + "\n"
-        "【安全红线】你不做任何诊断、不推荐药物、不说『没事/是XX病』；"
-        "如果老人提到剧烈胸痛、呼吸困难、意识不清、大出血等紧急情况，reply 必须立刻建议马上拨打120或去急诊，并把 done 置为 true。\n"
-        "【已收集信息】" + (collected_txt if collected_txt != "{}" else "（还没有）") + "\n"
+        "你是 AI 陪诊员「小暖」，正在陪一位老人说话。\n"
+        + mode_rule + "\n"
+        + task_reply_rule + "\n"
+        "回答使用大白话，不代替医生判断。\n"
+        "【安全红线】你不做诊断、不推荐药物、不说『没事/是XX病』；剧烈胸痛、呼吸困难、意识不清、大出血等紧急情况，"
+        "立刻建议马上拨打120或去急诊。\n"
         "【老人档案】\n" + patient_block(state.get("patient") or {}) + "\n"
-        f"【本轮是第{turns}轮】综合历史信息和老人的最新讲述，提取新增信息；"
-        "判断还缺哪些关键字段：还缺就追问（done=false），信息够（或已到轮数上限）就 done=true。\n"
+        "【已保存的用药提醒】\n" + meds_block(meds_so_far) + "\n"
         + VOICE_RULE
     )
-    last_text = state["messages"][-1].content
-    out = await get_model(env, 0.4).with_structured_output(InterviewOut).ainvoke(
-        [{"role": "system", "content": sys}, {"role": "user", "content": str(last_text)}]
-    )
-
-    # 合并本轮提取
-    merged = dict(interview)
-    merged.setdefault("_turns", []).append(1)
-    for k, v in (out.collected_update or {}).items():
-        if v and str(v).strip():
-            merged[k] = str(v).strip()
-    force_done = turns >= MAX_INTERVIEW_TURNS
-    done = bool(out.done) or force_done
-
-    if not done:
-        return {
-            "interview": merged,
-            "interview_done": False,
-            "messages": [AIMessage(content=out.reply)],
-        }
-
-    # 信息收齐 -> 生成病史摘要卡
-    card_sys = (
-        "你是 AI 陪诊员「小暖」。请根据收集到的问诊信息和老人档案，生成一张『病史摘要卡』JSON，"
-        "给医生快速看病用。字段：type 固定为 summary；patient_name 姓名(可空串)；age 年龄(可空)；gender 性别(可空)；"
-        "chief_complaint 主诉(一句话)；timeline 症状时间线(数组，如『3个月前：开始胸闷』)；"
-        "history 既往病史(数组)；medications 在服药物(数组)；allergies 药物过敏(数组，无则空)；"
-        "last_exam 近期检查(可空)。没有的信息写空串或空数组，不要编造。"
-        "只输出JSON。\n【问诊收集】" + json.dumps({k: v for k, v in merged.items() if not k.startswith("_")}, ensure_ascii=False)
-        + "\n【老人档案】\n" + patient_block(state.get("patient") or {})
-    )
-    card_raw = await (await get_model(env, 0.2).ainvoke(card_sys)).content
-    card = _safe_json(card_raw, {"type": "summary"})
-    card.setdefault("type", "summary")
-
-    reply = (
-        "好啦，我都记下来了，整理成了一张「病史摘要卡」，明天看病的时候把它给医生看就行，医生一眼就能明白您的情况。"
-        if not force_done
-        else "咱们聊得很充分了，我把已知的信息整理成了「病史摘要卡」，看病时给医生看，有需要医生会再问您的。"
-    )
-    return {
-        "interview": merged,
-        "interview_done": True,
-        "result_card": card,
-        "messages": [AIMessage(content=reply)],
-    }
-
-
-async def post_node(state: CompanionState, env: dict):
-    """诊后：把医生叮嘱翻译成服药表 + 复诊提醒卡"""
-    sys = (
-        "你是 AI 陪诊员「小暖」。老人刚看完医生，家属把医生的叮嘱转述给你。"
-        "请解析成两张给老人用的卡片数据：\n"
-        "1. 服药表 medications：[{name 药名, dosage 剂量(如『1片(100mg)』), frequency 频次(如『每天3次』), "
-        "timing 时机(用大白话如『早中晚饭后』), notes 特别提醒(可空)}]\n"
-        "2. warnings：忌口、不能一起做的事等提醒（大白话短句数组）\n"
-        "3. follow_up 复诊提醒：{department 科室, time_hint 时间(如『2周后』『下个月3号』), "
-        "bring 要带的东西[], notes 备注}，没有复诊安排就是空 dict。\n"
-        "reply 用大白话跟老人确认并概括安排，温暖短句。\n"
-        "【安全红线】只整理医生原话，不加自己的医疗建议、不改剂量。\n"
-        "【老人档案】\n" + patient_block(state.get("patient") or {}) + "\n" + VOICE_RULE
-    )
-    last_text = state["messages"][-1].content
-    out = await get_model(env, 0.2).with_structured_output(PostOut).ainvoke(
-        [{"role": "system", "content": sys}, {"role": "user", "content": str(last_text)}]
-    )
-    cards = {"type": "post", "medications": out.medications, "warnings": out.warnings, "follow_up": out.follow_up or {}}
-    return {"result_card": cards, "messages": [AIMessage(content=out.reply)]}
-
-
-async def archive_node(state: CompanionState, env: dict):
-    """档案问答 / 日常健康答疑（基于本地档案，不做诊断）"""
-    sys = (
-        "你是 AI 陪诊员「小暖」，老人或家属在问健康相关的问题。请根据【老人档案】回答。\n"
-        "【规矩】大白话、短句；只解释常识和档案里已有的安排（比如『今天该吃什么药』）；"
-        "不做诊断、不开药、不改剂量；问题复杂或紧急时建议去医院；语气像晚辈，温暖。\n"
-        "【老人档案】\n" + patient_block(state.get("patient") or {}) + "\n" + VOICE_RULE
-    )
-    msgs = [{"role": "system", "content": sys}] + [
+    history = [
         {"role": "user" if m.type == "human" else "assistant", "content": str(m.content)}
-        for m in state["messages"][-6:]
+        for m in state["messages"][-10:]
     ]
-    out = await get_model(env, 0.4).ainvoke(msgs)
-    return {"messages": [AIMessage(content=out.content)]}
 
+    recent_user_inputs = [
+        str(m.content) for m in state["messages"][-12:] if getattr(m, "type", "") == "human"
+    ][-6:]
+    mode_extract_rule = {
+        "pre": "当前在准备就诊。填写 visit_summary 的 symptoms、duration、history、current_meds、questions、missing；只整理用户明确说出的信息，不诊断、不推断。\n",
+        "post": "当前在整理就诊后的安排。\n",
+        "chat": "当前是日常聊天。只有用户确实在说就医相关内容时才整理就医信息，普通闲聊不要生成 visit_summary。\n",
+    }[mode]
+    extract_prompt = (
+        "你在为 AI 陪诊员做后台信息整理，分析老人这一轮的话：\n"
+        "先检查是否有适合长期记住的本人信息（称呼、年龄、长期疾病、过敏史、居住地、行动/听力情况、沟通偏好等）。只记录用户明确说的本人事实，填入 profile_updates；不要把短期症状或第三方信息放进档案，不推断。没有就留空 {}。\n"
+        + mode_extract_rule
+        + "只要用户明确说自己正在使用某种药、医生安排了某种药，或明确要求记下用药，就写入 medications_added；提问、假设、他人用药不记。药名/剂量/频次/时机只填明确说出的内容，其他留空字符串，不要猜。只有用户明确说了每天的具体钟点才填 reminder_times（HH:MM列表），‘早上’‘饭后’等不明确钟点不能猜。\n"
+        + ("整理用户提到的忌口、注意事项、复诊时间；没有就留空。\n" if mode == "post" else "warnings 和 follow_up 留空。\n")
+        + "只输出 JSON。\n"
+        "【最近几轮用户提供的信息】\n" + "\n".join(recent_user_inputs) + "\n"
+        "【已保存的用药提醒】" + meds_block(meds_so_far)
+    )
 
-def _safe_json(raw: str, fallback: dict) -> dict:
-    raw = str(raw).strip()
-    if raw.startswith("```"):
-        raw = raw.strip("`").lstrip("json").strip()
+    # 提取调用与口播并行：后台任务，失败/超时都不影响口播
     try:
-        data = json.loads(raw)
-        return data if isinstance(data, dict) else fallback
+        extract_task = asyncio.ensure_future(
+            get_model(env, 0).with_structured_output(ExtractOut).ainvoke([{"role": "user", "content": extract_prompt}])
+        )
     except Exception:
-        # 兜底截取首个 { 到末个 }
-        s, e = raw.find("{"), raw.rfind("}")
-        if s >= 0 and e > s:
+        extract_task = None
+
+    parts: list[str] = []
+    out: ExtractOut | None = None
+    try:
+        async for chunk in get_model(env, 0.4).astream([{"role": "system", "content": sys}] + history):
+            c = chunk.content
+            if isinstance(c, str) and c:
+                parts.append(c)
+    finally:
+        if extract_task is not None:
             try:
-                data = json.loads(raw[s : e + 1])
-                return data if isinstance(data, dict) else fallback
+                out = await extract_task
             except Exception:
-                pass
-        return fallback
+                out = None
 
+    update: dict = {"messages": [AIMessage(content="".join(parts))]}
+    if out is None:
+        return update
 
-def route_mode(state: CompanionState) -> str:
-    return {"pre": "pre", "post": "post"}.get(state.get("mode") or "", "archive")
+    # 只增量更新明确提到的本人长期信息，保留用户已填的其他档案字段。
+    profile_updates = {}
+    if isinstance(out.profile_updates, dict):
+        for key, value in out.profile_updates.items():
+            key = str(key).strip()[:20]
+            if not key:
+                continue
+            if isinstance(value, str) and value.strip():
+                profile_updates[key] = value.strip()[:300]
+            elif isinstance(value, list):
+                values = [str(v).strip()[:100] for v in value if isinstance(v, (str, int, float)) and str(v).strip()]
+                if values:
+                    profile_updates[key] = values[:8]
+    if profile_updates:
+        update["profile_updates"] = profile_updates
+
+    # 合并新用药（按药名去重，同药名覆盖旧剂量/频次/时机）
+    new_items: list[dict] = []
+    if out.medications_added:
+        for m in out.medications_added:
+            if not isinstance(m, dict) or not m.get("name"):
+                continue
+            existing_idx = next((i for i, e in enumerate(meds_so_far) if e.get("name") == m["name"]), -1)
+            previous = meds_so_far[existing_idx] if existing_idx >= 0 else {}
+            reminder_times = m.get("reminder_times") if isinstance(m.get("reminder_times"), list) else []
+            if not reminder_times:
+                reminder_times = previous.get("reminder_times") or []
+            entry = {
+                "name": m.get("name", "").strip(),
+                "dosage": (m.get("dosage") or previous.get("dosage") or "").strip(),
+                "frequency": (m.get("frequency") or previous.get("frequency") or "").strip(),
+                "timing": (m.get("timing") or previous.get("timing") or "").strip(),
+                "notes": (m.get("notes") or previous.get("notes") or "").strip(),
+                "reminder_times": [
+                    value for value in reminder_times
+                    if isinstance(value, str) and re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value)
+                ][:4] if isinstance(reminder_times, list) else [],
+            }
+            if existing_idx >= 0:
+                meds_so_far[existing_idx] = entry
+            else:
+                meds_so_far.append(entry)
+            new_items.append(entry)
+        # 防御：按药名去重（LangGraph checkpointer 可能带重复、模型可能回传现有药）
+        seen = set()
+        deduped = []
+        for m in meds_so_far:
+            key = (m.get("name") or "").strip()
+            if key and key not in seen:
+                seen.add(key)
+                deduped.append(m)
+        meds_so_far = deduped
+        update["medications"] = meds_so_far
+
+    # 本轮有新用药 / 有诊后注意 → 推一张提醒卡给前端展示
+    if mode == "pre" and out.visit_summary and any(out.visit_summary.values()):
+        summary = {
+            key: out.visit_summary.get(key) or ""
+            for key in ("symptoms", "duration", "history", "current_meds", "questions", "missing")
+        }
+        update["result_card"] = {"type": "pre", "visit_summary": summary}
+    elif (mode == "post" and (new_items or out.warnings or out.follow_up or out.next_dose_time)) or new_items:
+        update["result_card"] = {
+            "type": "post",
+            "medications": meds_so_far,
+            "new_items": new_items,
+            "warnings": out.warnings or [],
+            "follow_up": out.follow_up or {},
+            "next_dose_time": out.next_dose_time or "",
+        }
+    return update
 
 
 # ---------------- 图构建 ----------------
@@ -223,13 +244,7 @@ def route_mode(state: CompanionState) -> str:
 
 def build_graph(env: dict, checkpointer=None):
     g = StateGraph(CompanionState)
-    g.add_node("triage", partial(triage_node, env=env))
-    g.add_node("pre", partial(pre_node, env=env))
-    g.add_node("post", partial(post_node, env=env))
-    g.add_node("archive", partial(archive_node, env=env))
-    g.add_edge(START, "triage")
-    g.add_conditional_edges("triage", route_mode, {"pre": "pre", "post": "post", "archive": "archive"})
-    g.add_edge("pre", END)
-    g.add_edge("post", END)
-    g.add_edge("archive", END)
+    g.add_node("reply", partial(reply_node, env=env))
+    g.add_edge(START, "reply")
+    g.add_edge("reply", END)
     return g.compile(checkpointer=checkpointer)
