@@ -27,6 +27,7 @@ export function CardView({ card }) {
   if (card.type === "post") {
     return (
       <div className="space-y-1">
+        {card.source === "photo" && <p className="font-medium text-[#287f80]">{card.document_type || "医嘱"}照片整理（已由您核对）</p>}
         {Array.isArray(card.new_items) && card.new_items.length > 0 && (
           <p className="font-medium text-[#287f80]">刚记下的用药提醒</p>
         )}
@@ -43,6 +44,9 @@ export function CardView({ card }) {
             <p className="mt-2 font-medium text-[#287f80]">注意事项</p>
             {card.warnings.map((w, i) => <p key={"w" + i}>· {w}</p>)}
           </>
+        )}
+        {Array.isArray(card.unreadable) && card.unreadable.length > 0 && (
+          <p className="mt-2 text-[#ae684c]">原件待确认：{card.unreadable.join("、")}</p>
         )}
         {card.follow_up && card.follow_up.department && (
           <p className="mt-2">

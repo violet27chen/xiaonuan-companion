@@ -14,6 +14,7 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.ValueCallback;
 
 /**
  * 陪诊小暖：WebView 壳。加载 EdgeOne 线上页面，
@@ -24,9 +25,11 @@ public class MainActivity extends Activity {
     private static final String SITE = "https://xiaonuan.27c.site";
     private static final int REQ_MIC = 1;
     private static final int REQ_NOTIFICATIONS = 2;
+    private static final int REQ_FILE = 3;
 
     private WebView wv;
     private XiaonuanBridge bridge;
+    private ValueCallback<Uri[]> filePathCallback;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,6 +66,20 @@ public class MainActivity extends Activity {
         });
         wv.setWebChromeClient(new WebChromeClient() {
             @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (filePathCallback != null) filePathCallback.onReceiveValue(null);
+                filePathCallback = callback;
+                try {
+                    startActivityForResult(params.createIntent(), REQ_FILE);
+                    return true;
+                } catch (Exception ignored) {
+                    filePathCallback = null;
+                    callback.onReceiveValue(null);
+                    return false;
+                }
+            }
+
+            @Override
             public void onPermissionRequest(final PermissionRequest request) {
                 runOnUiThread(new Runnable() {
                     @Override
@@ -94,6 +111,16 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_FILE && filePathCallback != null) {
+            Uri[] results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+            filePathCallback.onReceiveValue(results);
+            filePathCallback = null;
+        }
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         MedicationReminderScheduler.restore(this);
@@ -107,6 +134,10 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (filePathCallback != null) {
+            filePathCallback.onReceiveValue(null);
+            filePathCallback = null;
+        }
         if (wv != null) wv.destroy();
         super.onDestroy();
     }

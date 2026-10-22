@@ -71,6 +71,7 @@ export function useConversation() {
   const demoRef = useRef(false);
   const graphReadyRef = useRef(false);
   const startingRef = useRef(false);
+  const lastReplyRef = useRef("");
 
   /* ================= 启动：能力探测，决定 live / demo ================= */
   useEffect(() => {
@@ -287,6 +288,7 @@ export function useConversation() {
       splitSent(text).forEach((s) => sents.push(s));
     }
     if (token !== turnRef.current) return;
+    if (text) lastReplyRef.current = text;
     streamDone = true;
     const rest = tail.trim();
     if (rest) sents.push(rest);
@@ -446,6 +448,22 @@ export function useConversation() {
     if (!micOnRef.current) startMic();
   }
 
+  function repeatLastReply() {
+    if (!lastReplyRef.current) return;
+    interruptTurn();
+    muteMic();
+    const token = ++turnRef.current;
+    busyRef.current = true;
+    setMicError("");
+    setPhase("think");
+    speakStream(splitSent(lastReplyRef.current), token, () => true);
+  }
+
+  function pauseMic() {
+    if (busyRef.current) interruptTurn();
+    muteMic();
+  }
+
   /* ================= 前后台切换：恢复被浏览器挂起的音频上下文 =================
      页面切后台时 Chrome 会挂起 AudioContext（onaudioprocess 停火，VAD 静默死亡），
      回到前台后 resume；麦克风开着却没在收音时重新开始听。 */
@@ -512,5 +530,5 @@ export function useConversation() {
     setCards((prev) => prev.filter((_, idx) => idx !== i));
   }
 
-  return { phase, micOn, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, mode, detectedMode, setMode };
+  return { phase, micOn, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, pauseMic, repeatLastReply, hasLastReply: !!lastReplyRef.current, mode, detectedMode, setMode };
 }

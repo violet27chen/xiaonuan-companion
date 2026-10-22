@@ -1,23 +1,64 @@
 import { useEffect, useState } from "react";
-import { Mic, Stethoscope, Headphones, Brain, X, Pill, Copy, Check, Share2, Sparkles } from "lucide-react";
+import { Mic, Stethoscope, Headphones, Brain, X, Pill, Copy, Check, Share2, Sparkles, CaseSensitive, Gauge, RotateCcw } from "lucide-react";
 import Companion from "./Companion.jsx";
 import MemoryPanel, { CardView } from "./MemoryPanel.jsx";
+import PrescriptionPhotoPanel from "./PrescriptionPhotoPanel.jsx";
+import VisitJourney from "./VisitJourney.jsx";
 import { PHASE_TEXT, useConversation } from "../hooks/useConversation.js";
-import { fetchMemory } from "../lib/auth.js";
-import { setAudioMuted } from "../lib/ai.js";
+import { fetchMemory, getUser } from "../lib/auth.js";
+import { getSpeechSpeed, setAudioMuted, setSpeechSpeed } from "../lib/ai.js";
 import { syncMedicationReminders, normalizeReminderTimes, remindersEnabled } from "../lib/reminders.js";
 
 export default function CallScreen() {
-  const { phase, micOn, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, mode, detectedMode, setMode } = useConversation();
+  const { phase, micOn, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, pauseMic, repeatLastReply, hasLastReply, mode, detectedMode, setMode } = useConversation();
   const [speakerOn, setSpeakerOn] = useState(true);
   const [activationOpen, setActivationOpen] = useState(true);
   const [memOpen, setMemOpen] = useState(false);
   const [nextDose, setNextDose] = useState(null);
   const [copyDone, setCopyDone] = useState(false);
   const [shareStatus, setShareStatus] = useState("");
+  const [photoOpen, setPhotoOpen] = useState(false);
+  const [speechSpeed, setSpeedState] = useState(getSpeechSpeed);
+  const [largeCaptions, setLargeCaptions] = useState(() => {
+    try { return localStorage.getItem("xn_large_captions") === "1"; } catch { return false; }
+  });
+  const journeyKey = `xn_visit_step_${getUser() || "guest"}`;
+  const [journeyStep, setJourneyStep] = useState(() => {
+    try { return Math.max(0, Math.min(3, Number(localStorage.getItem(journeyKey)) || 0)); } catch { return 0; }
+  });
   const phaseText = PHASE_TEXT[phase] || "";
 
   useEffect(() => setAudioMuted(!speakerOn), [speakerOn]);
+  useEffect(() => setSpeechSpeed(speechSpeed), [speechSpeed]);
+
+  function setVisitStep(step) {
+    const next = Math.max(0, Math.min(3, step));
+    setJourneyStep(next);
+    try { localStorage.setItem(journeyKey, String(next)); } catch {}
+  }
+
+  useEffect(() => {
+    const latest = cards[cards.length - 1];
+    if (latest?.type === "pre" && journeyStep === 0) setVisitStep(1);
+    if (latest?.type === "post" && journeyStep < 2) setVisitStep(2);
+  }, [cards, journeyStep]);
+
+  useEffect(() => {
+    if (mode === "auto" && detectedMode === "post" && journeyStep < 2) setVisitStep(2);
+  }, [mode, detectedMode, journeyStep]);
+
+  function toggleLargeCaptions() {
+    setLargeCaptions((value) => {
+      const next = !value;
+      try { localStorage.setItem("xn_large_captions", next ? "1" : "0"); } catch {}
+      return next;
+    });
+  }
+
+  function openPhotoPanel() {
+    pauseMic();
+    setPhotoOpen(true);
+  }
 
   async function copyVisitSummary(card) {
     const s = card?.visit_summary || {};
@@ -103,7 +144,7 @@ export default function CallScreen() {
 
   const busy = phase === "think" || phase === "speak";
   return (
-    <div className="relative flex h-dvh flex-col overflow-hidden bg-[#f2f7f6] text-[#19383f]">
+    <div className={`relative flex h-dvh flex-col overflow-hidden bg-[#f2f7f6] text-[#19383f]${largeCaptions ? " large-captions" : ""}`}>
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-28 top-16 h-72 w-72 rounded-full bg-[#dff0ec] blur-3xl" />
         <div className="absolute -right-32 top-1/3 h-80 w-80 rounded-full bg-[#fbe9dc] blur-3xl" />
@@ -137,6 +178,26 @@ export default function CallScreen() {
         {mode === "auto" ? `自动识别：${{ pre: "就诊前准备", post: "就诊后整理", chat: "日常聊天" }[detectedMode] || "等待识别"}` : "手动选择模式"}
       </p>
 
+      <div className="relative z-10 mx-auto mt-2 flex w-[calc(100%-40px)] max-w-[420px] items-center justify-center gap-2">
+        <button type="button" onClick={toggleLargeCaptions} aria-pressed={largeCaptions} className={`flex h-10 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium ${largeCaptions ? "bg-[#287f80] text-white" : "bg-white/80 text-[#547477]"}`}>
+          <CaseSensitive size={16} />{largeCaptions ? "字幕已放大" : "字幕放大"}
+        </button>
+        <button type="button" onClick={() => setSpeedState((speed) => speed === "slow" ? "normal" : "slow")} aria-pressed={speechSpeed === "slow"} className="flex h-10 items-center gap-1.5 rounded-xl bg-white/80 px-3 text-[12px] font-medium text-[#547477]">
+          <Gauge size={16} />{speechSpeed === "slow" ? "慢速朗读" : "自然语速"}
+        </button>
+        {hasLastReply && <button type="button" onClick={repeatLastReply} className="flex h-10 items-center gap-1.5 rounded-xl bg-white/80 px-3 text-[12px] font-medium text-[#547477]">
+          <RotateCcw size={15} />再听一次
+        </button>}
+      </div>
+
+      <VisitJourney
+        step={journeyStep}
+        onPrepare={() => setMode("pre")}
+        onDoctorDone={() => { setVisitStep(2); setMode("post"); openPhotoPanel(); }}
+        onPhoto={openPhotoPanel}
+        onReset={() => { setVisitStep(0); setMode("auto"); }}
+      />
+
       {nextDose && (
         <button type="button" onClick={() => setMemOpen(true)} className="relative z-10 mx-auto mt-3 flex items-center gap-2 rounded-full border border-[#f4dfc8] bg-[#fff8ef]/90 px-4 py-2 text-[12px] text-[#956543]">
           <Pill size={14} />
@@ -158,7 +219,7 @@ export default function CallScreen() {
               {phaseText || (micOn ? "您可以接着说，我在听" : "准备好了，点话筒开始")}
             </p>
             {subtitle && (
-              <div className="mx-auto mt-2 max-w-[370px] rounded-2xl border border-white/90 bg-white/85 px-4 py-2.5 text-[15px] leading-6 text-[#31565b] shadow-[0_8px_24px_rgba(48,89,88,.07)]">
+              <div className="subtitle-panel mx-auto mt-2 max-w-[370px] rounded-2xl border border-white/90 bg-white/85 px-4 py-2.5 text-[15px] leading-6 text-[#31565b] shadow-[0_8px_24px_rgba(48,89,88,.07)]">
                 <span className="mr-2 text-[11px] font-semibold uppercase tracking-wide text-[#4b9692]">{subtitle.who}</span>
                 {subtitle.text}
               </div>
@@ -213,6 +274,7 @@ export default function CallScreen() {
       </footer>
 
       {memOpen && <MemoryPanel onClose={() => setMemOpen(false)} />}
+      {photoOpen && <PrescriptionPhotoPanel onClose={() => setPhotoOpen(false)} onSaved={() => { setVisitStep(3); setPhotoOpen(false); }} />}
 
       {activationOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#19383f]/35 px-6 backdrop-blur-[5px]"

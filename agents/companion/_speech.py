@@ -12,7 +12,8 @@ TTS_MODEL = "mimo-v2.5-tts"
 TTS_VOICE = "冰糖"  # 预置中文女声
 
 # 风格提示词必须短：实测 100+ 字的长提示让单句合成从 1.5s 涨到 3.3s（推理模型逐字过 prompt）
-TTS_STYLE = "温柔亲切，像孙女陪老人说话，语速慢，吐字清，句尾轻收。"
+TTS_STYLE = "温柔亲切，像孙女陪老人说话，语速偏慢，吐字清楚，句尾轻收。"
+TTS_STYLE_NORMAL = "温柔亲切，像孙女陪老人说话，语速自然，吐字清楚，句尾轻收。"
 
 
 def _conf(env: dict) -> tuple[str, str] | None:
@@ -73,7 +74,7 @@ async def transcribe(env: dict, audio_b64: str, mime: str = "audio/wav") -> str:
         return ""
 
 
-async def synthesize(env: dict, text: str) -> str:
+async def synthesize(env: dict, text: str, speed: str = "slow") -> str:
     """文本 -> base64 mp3。返回空串表示合成失败。"""
     conf = _conf(env)
     if not conf or not text:
@@ -87,7 +88,7 @@ async def synthesize(env: dict, text: str) -> str:
             json={
                 "model": TTS_MODEL,
                 "messages": [
-                    {"role": "user", "content": TTS_STYLE},
+                    {"role": "user", "content": TTS_STYLE if speed != "normal" else TTS_STYLE_NORMAL},
                     {"role": "assistant", "content": text[:1200]},
                 ],
                 "audio": {"format": "mp3", "voice": TTS_VOICE},

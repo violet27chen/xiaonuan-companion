@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from . import _users
 from ._graph import build_graph
 from ._speech import speech_available, synthesize, synthesize_stream, transcribe
+from ._vision import parse_medication_photo
 
 DEMO_PATIENT = {"称呼": "叔叔阿姨"}
 
@@ -81,13 +82,29 @@ async def handler(ctx):
         meds = data.get("medications")
         if meds is not None and not isinstance(meds, list):
             return {"error": "medications 格式不对"}, 400
+        cards = data.get("cards")
+        if cards is not None and (not isinstance(cards, list) or len(cards) > 5):
+            return {"error": "卡片格式不对"}, 400
         await _users.save_memory(
             ctx, username,
             profile=_safe_profile(data.get("profile")) if "profile" in data else None,
             medications=meds,
+            cards=cards,
             replace_medications=True,
         )
         return {"ok": True}
+
+    # ---- 拍照整理医嘱：只识别候选内容，不自动写入或设置提醒 ----
+    if action == "medication_photo_parse":
+        try:
+            result = await parse_medication_photo(
+                ctx.env,
+                body.get("image") or "",
+                body.get("mime") or "",
+            )
+        except ValueError as e:
+            return {"error": str(e)}, 422
+        return result
 
     # ---- 单独 TTS：把一段文字念出来（逐句预取合成用）----
     if action == "tts":
@@ -105,7 +122,7 @@ async def handler(ctx):
                 print(f"[latency] tts_stream={int((time.perf_counter() - _t) * 1000)}ms chars={len(text)} b64={n}", flush=True)
             return ctx.utils.stream_sse(tts_gen())
         _t_tts = time.perf_counter()
-        audio = await synthesize(ctx.env, text)
+        audio = await synthesize(ctx.env, text, body.get("speed") or "slow")
         print(f"[latency] tts={int((time.perf_counter() - _t_tts) * 1000)}ms chars={len(text)}", flush=True)
         if not audio:
             return {"error": "tts_unavailable"}, 503

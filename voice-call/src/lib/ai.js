@@ -100,14 +100,29 @@ export async function askLive(b64, { onAsr, onText, onCard, onMode, signal, mode
 }
 
 const ttsMemo = {};
+const SPEECH_SPEED_KEY = "xn_speech_speed";
+let speechSpeed = (() => {
+  try { return localStorage.getItem(SPEECH_SPEED_KEY) === "normal" ? "normal" : "slow"; }
+  catch { return "slow"; }
+})();
+
+export function setSpeechSpeed(speed) {
+  speechSpeed = speed === "normal" ? "normal" : "slow";
+  try { localStorage.setItem(SPEECH_SPEED_KEY, speechSpeed); } catch {}
+}
+
+export function getSpeechSpeed() {
+  return speechSpeed;
+}
 
 /** 文本 → base64 wav（记忆化：预取和正式播报不重复请求；失败的条目不驻留，允许重试） */
 export function ttsWav(text, signal) {
   if (!text) return Promise.reject(new Error("empty"));
-  const hit = ttsMemo[text];
+  const cacheKey = `${speechSpeed}:${text}`;
+  const hit = ttsMemo[cacheKey];
   if (hit) return hit;
   const p = (async () => {
-    const r = await post({ action: "tts", text }, signal);
+    const r = await post({ action: "tts", text, speed: speechSpeed }, signal);
     if (!r.ok) {
       checkAuth(r);
       throw new Error("tts " + r.status);
@@ -117,9 +132,9 @@ export function ttsWav(text, signal) {
     return j.audio;
   })();
   p.catch(() => {
-    if (ttsMemo[text] === p) delete ttsMemo[text];
+    if (ttsMemo[cacheKey] === p) delete ttsMemo[cacheKey];
   });
-  ttsMemo[text] = p;
+  ttsMemo[cacheKey] = p;
   return p;
 }
 
@@ -229,7 +244,7 @@ export function speakWithVoice(text, { onStart } = {}) {
       synth.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = "zh-CN";
-      u.rate = 0.95;
+      u.rate = speechSpeed === "slow" ? 0.82 : 1;
       const zh = synth.getVoices().find((v) => /zh|cmn|Chinese/i.test(v.lang + " " + v.name));
       if (zh) u.voice = zh;
       u.onstart = () => onStart && onStart();
