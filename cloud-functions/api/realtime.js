@@ -10,7 +10,13 @@ const MAX_TOOL_TEXT = 6000;
 // 前端就显示「实时语音连接失败」。改成下面的对象返回形式即可。
 export async function onRequest(context) {
   if (context.request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
-    return new Response("请使用 WebSocket 连接", { status: 426, headers: { Upgrade: "websocket" } });
+    return new Response("请使用 WebSocket 连接", {
+      status: 426,
+      headers: {
+        Upgrade: "websocket",
+        "X-Xiaonuan-Voice-Handler": "2026-10-23-wsdiag-1",
+      },
+    });
   }
   if (!context.env?.DOUBAO_REALTIME_API_KEY) {
     return new Response("实时语音服务未配置", { status: 503 });
