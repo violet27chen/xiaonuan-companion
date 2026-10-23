@@ -87,6 +87,7 @@ function pcmBase64ToFloat(base64) {
 export function useConversation() {
   const [phase, setPhase] = useState("boot");
   const [micOn, setMicOn] = useState(false);
+  const [micConnecting, setMicConnecting] = useState(false);
   const [level, setLevel] = useState(0);
   const [subtitle, setSubtitle] = useState(null);
   const [voiceCommand, setVoiceCommand] = useState(null);
@@ -355,6 +356,7 @@ export function useConversation() {
   async function startMic() {
     if (startingRef.current) return;
     startingRef.current = true;
+    setMicConnecting(true);
     setMicError("");
     try {
       if (screen.orientation?.lock) screen.orientation.lock("portrait").catch(() => {});
@@ -393,6 +395,7 @@ export function useConversation() {
       try { socketRef.current?.close(); } catch {}
     } finally {
       startingRef.current = false;
+      setMicConnecting(false);
     }
   }
 
@@ -501,7 +504,7 @@ export function useConversation() {
   }
 
   return {
-    phase, micOn, level, subtitle, cards, dismissCard, demoMode, micError,
+    phase, micOn, micConnecting, level, subtitle, cards, dismissCard, demoMode, micError,
     toggleMic, activateMic, pauseMic, resumeListening, repeatLastReply,
     speakWelcome, hasLastReply: !!lastReplyRef.current, mode, detectedMode,
     setMode, voiceCommand,

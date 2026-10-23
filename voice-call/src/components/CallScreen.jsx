@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic, Stethoscope, Headphones, Brain, X, Pill, Copy, Check, Share2, Sparkles, CaseSensitive, Gauge, RotateCcw } from "lucide-react";
+import { Mic, Stethoscope, Headphones, Brain, X, Pill, Copy, Check, Share2, Sparkles, CaseSensitive, Gauge, RotateCcw, LoaderCircle } from "lucide-react";
 import Companion from "./Companion.jsx";
 import BrandMark from "./BrandMark.jsx";
 import MemoryPanel, { CardView } from "./MemoryPanel.jsx";
@@ -10,7 +10,7 @@ import { getSpeechSpeed, setAudioMuted, setSpeechSpeed } from "../lib/ai.js";
 import { syncMedicationReminders, normalizeReminderTimes, remindersEnabled } from "../lib/reminders.js";
 
 export default function CallScreen() {
-  const { phase, micOn, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, pauseMic, resumeListening, repeatLastReply, speakWelcome, hasLastReply, mode, detectedMode, setMode, voiceCommand } = useConversation();
+  const { phase, micOn, micConnecting, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, pauseMic, resumeListening, repeatLastReply, speakWelcome, hasLastReply, mode, detectedMode, setMode, voiceCommand } = useConversation();
   const [speakerOn, setSpeakerOn] = useState(true);
   const [activationOpen, setActivationOpen] = useState(true);
   const [memOpen, setMemOpen] = useState(false);
@@ -336,11 +336,11 @@ export default function CallScreen() {
       <footer className="relative z-10 border-t border-white/70 bg-white/55 px-6 pb-[max(20px,env(safe-area-inset-bottom))] pt-4 backdrop-blur-sm">
         <div className="mx-auto flex max-w-[420px] items-center justify-center gap-7">
           <div className="flex flex-col items-center gap-1.5">
-            <button type="button" onClick={toggleMic} aria-label={micOn ? "停止聆听" : "开始说话"} aria-pressed={micOn}
-              className={`flex h-16 w-16 items-center justify-center rounded-[22px] border transition active:scale-95 ${micOn ? "border-[#287f80] bg-[#287f80] text-white shadow-[0_8px_20px_rgba(40,127,128,.2)] hover:bg-[#216f72]" : "border-[#dce8e7] bg-white/80 text-[#91a4a5] hover:bg-white"}`}>
-              <Mic size={24} strokeWidth={1.9} />
+            <button type="button" onClick={toggleMic} aria-label={micConnecting ? "正在连接语音服务" : micOn ? "停止聆听" : "开始说话"} aria-pressed={micOn} aria-busy={micConnecting} disabled={micConnecting}
+              className={`flex h-16 w-16 items-center justify-center rounded-[22px] border transition active:scale-95 disabled:cursor-wait ${micOn ? "border-[#287f80] bg-[#287f80] text-white shadow-[0_8px_20px_rgba(40,127,128,.2)] hover:bg-[#216f72]" : micConnecting ? "border-[#b7dcda] bg-[#e5f3f1] text-[#287f80]" : "border-[#dce8e7] bg-white/80 text-[#91a4a5] hover:bg-white"}`}>
+              {micConnecting ? <LoaderCircle size={24} strokeWidth={1.9} className="animate-spin" /> : <Mic size={24} strokeWidth={1.9} />}
             </button>
-            <span className={`text-[11px] font-medium ${micOn ? "text-[#287f80]" : "text-[#93a7a8]"}`}>{micOn ? "正在聆听" : "麦克风已关闭"}</span>
+            <span role="status" className={`text-[11px] font-medium ${micOn || micConnecting ? "text-[#287f80]" : "text-[#93a7a8]"}`}>{micConnecting ? "正在连接…" : micOn ? "正在聆听" : "麦克风已关闭"}</span>
           </div>
           <div className="flex flex-col items-center gap-1.5">
             <button type="button" onClick={() => setSpeakerOn((v) => !v)} aria-label={speakerOn ? "关闭听筒声音" : "开启听筒声音"} aria-pressed={speakerOn}
@@ -350,7 +350,7 @@ export default function CallScreen() {
             <span className={`text-[11px] font-medium ${speakerOn ? "text-[#287f80]" : "text-[#93a7a8]"}`}>{speakerOn ? "听筒声音已开启" : "听筒已静音"}</span>
           </div>
         </div>
-        <p className="mt-2 text-center text-[11px] text-[#93a7a8]">{micOn ? "正在聆听 · 再点一下可结束" : "点击话筒开始语音对话"}</p>
+        <p className="mt-2 text-center text-[11px] text-[#93a7a8]">{micConnecting ? "正在连接小暖的语音服务…" : micOn ? "正在聆听 · 再点一下可结束" : micError ? "连接没有成功，请稍后重试" : "点击话筒开始语音对话"}</p>
       </footer>
 
       {memOpen && <MemoryPanel onClose={closeMemoryPanel} focusDispenser={focusDispenser} />}
