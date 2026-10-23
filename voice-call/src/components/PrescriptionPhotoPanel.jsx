@@ -1,25 +1,42 @@
-import { useEffect, useState } from "react";
-import { Camera, Check, LoaderCircle, RotateCcw, Upload, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Camera, Check, LoaderCircle, RotateCcw, X } from "lucide-react";
 import { fetchMemory, saveMemory } from "../lib/auth.js";
 import { compressPrescriptionPhoto, recognizePrescription } from "../lib/medicationPhoto.js";
-
-function timeText(value) {
-  return Array.isArray(value) ? value.join(", ") : String(value || "");
-}
+import { defaultReminderTimes, normalizeTimes, timesToSpeech } from "../lib/medicationSchedule.js";
 
 function timesFromText(value) {
-  return [...new Set(String(value || "").split(/[，,、\s]+/).map((v) => v.trim()).filter((v) => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v)))].slice(0, 4);
+  return normalizeTimes(String(value || "").split(/[，,、\s]+/).map((v) => v.trim()));
 }
 
-export default function PrescriptionPhotoPanel({ onClose, onSaved, autoOpened = false }) {
+/** 小暖复述记录的文本：药名+剂量+频次+时间，然后问对不对 */
+function readBackText(items) {
+  const valid = items.filter((item) => item.name?.trim());
+  if (!valid.length) return "";
+  const parts = valid.map((item) => {
+    const dose = item.dosage?.trim();
+    // 识别结果有时已带"每次"（如"每次1片"），别再重复加
+    const doseText = dose && !/每次|每一|每回/.test(dose) ? `每次${dose}` : dose || "";
+    const freq = item.frequency?.trim();
+    const times = timesToSpeech(timesFromText(item.reminderText));
+    return [item.name.trim(), doseText, freq, times].filter(Boolean).join("，");
+  });
+  const list = parts.join("；");
+  return valid.length === 1
+    ? `我记下了：${list}。这个时间对吗？不对的话直接告诉我怎么改。`
+    : `我记下了：${list}。这些时间对吗？不对的话直接告诉我怎么改。`;
+}
+
+export default function PrescriptionPhotoPanel({ onClose, onSpeak, onReadBack, onRetake, doneSignal = 0, autoOpened = false }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState("");
-  const [allowSend, setAllowSend] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
   const [items, setItems] = useState([]);
-  const [confirmOther, setConfirmOther] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [readBack, setReadBack] = useState("");
+  const autoRecognizeRef = useRef(false);
+  const itemsSnapshotRef = useRef("");
 
   useEffect(() => {
     if (!file) { setPreview(""); return undefined; }
@@ -28,83 +45,138 @@ export default function PrescriptionPhotoPanel({ onClose, onSaved, autoOpened = 
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
+  function resetAll() {
+    setFile(null);
+    setResult(null);
+    setItems([]);
+    setSaved(false);
+    setReadBack("");
+    setError("");
+    autoRecognizeRef.current = false;
+    itemsSnapshotRef.current = "";
+  }
+
   function chooseFile(next) {
     setError("");
     setResult(null);
     setItems([]);
-    setConfirmOther(false);
-    setAllowSend(false);
+    setSaved(false);
+    setReadBack("");
+    itemsSnapshotRef.current = "";
     setFile(next || null);
+    if (next) autoRecognizeRef.current = true; // 拍完/选完自动识别，不用点发送
+    onRetake?.();
   }
 
-  async function recognize() {
-    if (!file || !allowSend || busy) return;
+  async function recognize(fileArg) {
+    const target = fileArg || file;
+    if (!target || busy) return;
     setBusy(true);
     setError("");
     try {
-      const image = await compressPrescriptionPhoto(file);
+      const image = await compressPrescriptionPhoto(target);
       const parsed = await recognizePrescription(image);
       setResult(parsed);
-      setConfirmOther(false);
-      setItems((parsed.medications || []).map((med) => ({
-        ...med,
-        reminderText: timeText(med.reminder_times),
-        confirmed: false,
-      })));
-      if (!(parsed.medications || []).length) setError("没有读出药品项目；可以换一张更清楚的照片再试");
+      const recognized = (parsed.medications || [])
+        .filter((med) => med?.name?.trim())
+        .map((med) => {
+          // 医嘱没写钟点时，按频次自动排默认时间（非睡眠时段）
+          const schedule = defaultReminderTimes(med.frequency, med.reminder_times);
+          return {
+            ...med,
+            name: med.name.trim(),
+            reminderText: schedule.times.join(", "),
+            reminderSource: schedule.source,
+          };
+        });
+      setItems(recognized);
+      if (!recognized.length) {
+        setError("没有读出药品项目；可以换一张更清楚的照片再试");
+        onSpeak?.("这张照片我没看清药品信息，换一张更清楚的再拍一次吧。");
+        return;
+      }
+      await persist(recognized);
     } catch (e) {
       setError(e.message || "识别失败，请重试");
+      onSpeak?.("这张照片我没识别成功，换一张更清楚的再试一次吧。");
     } finally {
       setBusy(false);
     }
   }
 
-  function updateItem(index, patch) {
-    setItems((current) => current.map((item, i) => i === index ? { ...item, ...patch } : item));
-  }
-
-  async function saveConfirmed() {
-    const confirmed = items.filter((item) => item.confirmed && item.name.trim());
-    const hasOther = (result?.warnings?.length || 0) > 0
-      || !!result?.follow_up?.department || !!result?.follow_up?.time_hint
-      || (result?.follow_up?.bring?.length || 0) > 0;
-    if ((!confirmed.length && !(confirmOther && hasOther)) || busy) return;
+  /** 保存识别结果（合并同名用药），保存后让小暖复述时间并问对不对 */
+  async function persist(list) {
+    if (!list.length || busy) return;
     setBusy(true);
     setError("");
     try {
       const current = await fetchMemory();
       const merged = new Map((current.medications || []).filter((med) => med?.name?.trim()).map((med) => [med.name.trim(), med]));
-      const medications = confirmed.map(({ reminderText, confirmed: _confirmed, uncertain_fields, evidence, ...med }) => ({
+      const medications = list.map(({ reminderText, reminderSource, ...med }) => ({
         ...(merged.get(med.name.trim()) || {}),
         ...med,
         name: med.name.trim(),
         reminder_times: timesFromText(reminderText),
       }));
       for (const med of medications) merged.set(med.name, med);
-      const includeOther = confirmOther;
       const photoCard = {
         type: "post",
         source: "photo",
-        document_type: result.document_type,
+        document_type: result?.document_type,
         medications,
-        warnings: includeOther ? (result.warnings || []) : [],
-        follow_up: includeOther ? (result.follow_up || {}) : {},
-        unreadable: includeOther ? (result.unreadable || []) : [],
+        warnings: result?.warnings || [],
+        follow_up: result?.follow_up || {},
+        unreadable: result?.unreadable || [],
       };
       await saveMemory({ medications: [...merged.values()], cards: [photoCard] });
-      onSaved?.(photoCard);
+      setSaved(true);
+      itemsSnapshotRef.current = JSON.stringify(list);
+      const text = readBackText(list);
+      setReadBack(text);
+      onReadBack?.(text); // 小暖念出来 + 进入"等确认"状态
     } catch (e) {
       setError(e.message || "保存失败，请重试");
+      onSpeak?.("这次没保存成功，请稍后再试一次。");
     } finally {
       setBusy(false);
     }
   }
 
-  const confirmedCount = items.filter((item) => item.confirmed && item.name.trim()).length;
-  const hasOther = !!result && ((result.warnings?.length || 0) > 0
-    || !!result.follow_up?.department || !!result.follow_up?.time_hint
-    || (result.follow_up?.bring?.length || 0) > 0);
-  const canSave = confirmedCount > 0 || (confirmOther && hasOther);
+  // 拍完/选完照片：自动开始识别，不用点任何按钮
+  useEffect(() => {
+    if (file && autoRecognizeRef.current) {
+      autoRecognizeRef.current = false;
+      recognize(file);
+    }
+  }, [file]);
+
+  // 手动改了什么：停顿一下自动重存（老人不点保存也能改对）
+  useEffect(() => {
+    if (!saved || !items.length) return undefined;
+    const snapshot = JSON.stringify(items);
+    if (snapshot === itemsSnapshotRef.current) return undefined;
+    const timer = setTimeout(() => {
+      itemsSnapshotRef.current = snapshot;
+      persist(items);
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [items, saved]);
+
+  // 语音"我拍好了"：有照片就开始识别；已存好的就再念一遍时间
+  useEffect(() => {
+    if (!doneSignal) return undefined;
+    if (busy) return undefined;
+    if (file && !result) { recognize(file); return undefined; }
+    if (saved && readBack) onSpeak?.(readBack);
+    if (!file) setError("先拍一张药盒或医嘱的照片，拍好了再跟我说“我拍好了”。");
+    return undefined;
+  }, [doneSignal]);
+
+  function updateItem(index, patch) {
+    setItems((current) => current.map((item, i) => i === index ? { ...item, ...patch } : item));
+  }
+
+  const savedCount = items.filter((item) => item.name?.trim()).length;
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-[#19383f]/45 p-0 backdrop-blur-sm sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-labelledby="photo-title">
@@ -120,95 +192,81 @@ export default function PrescriptionPhotoPanel({ onClose, onSaved, autoOpened = 
         </header>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
-          {!result && (
-            <>
-              <p className="rounded-2xl border border-[#f1dfc8] bg-[#fff8ef] p-3.5 text-[14px] leading-6 text-[#805f43]">
-                拍清楚药盒、处方或医嘱上的文字，小暖会帮您整理看得清的信息。照片会发送给 MiMo 图片识别服务；建议先遮住姓名、身份证号、就诊卡号等个人信息，识别后请对照原件核对。药盒上的规格不代表每次服用剂量，小暖不会据此判断怎么吃药，也不会保存原照片。
-              </p>
-              {autoOpened && <p className="rounded-xl bg-[#edf6f4] px-3.5 py-3 text-[14px] leading-5 text-[#287f80]">您刚才提到了药品，我已经帮您打开拍照入口。点下面的按钮，对准药盒或医嘱拍一张；也可以从相册选照片。</p>}
-              {preview ? (
-                <div className="relative overflow-hidden rounded-2xl border border-[#dce8e7] bg-white">
-                  <img src={preview} alt="待识别的医嘱照片" className="max-h-[34vh] w-full object-contain" />
-                  <button type="button" onClick={() => chooseFile(null)} className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-white/95 px-3 py-2 text-[13px] text-[#547477] shadow" aria-label="重新选择照片">
-                    <RotateCcw size={15} />重选
-                  </button>
-                </div>
-              ) : (
-                <label className="flex min-h-44 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[#b9d8d3] bg-white text-center text-[#287f80]">
-                  <Camera size={32} strokeWidth={1.7} />
-                  <span className="text-[16px] font-medium">{autoOpened ? "点这里打开相机或相册" : "拍照或从相册选择"}</span>
-                  <span className="text-[13px] text-[#769092]">支持 JPG、PNG、WebP</span>
-                  <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="sr-only" onChange={(event) => chooseFile(event.target.files?.[0])} />
-                </label>
-              )}
-              {file && (
-                <label className="flex items-start gap-3 rounded-xl bg-white px-3.5 py-3 text-[14px] leading-5 text-[#547477]">
-                  <input type="checkbox" checked={allowSend} onChange={(event) => setAllowSend(event.target.checked)} className="mt-0.5 h-5 w-5 accent-[#287f80]" />
-                  <span>我知道这张照片会发送给 MiMo 识别；识别结果要与原医嘱核对后才保存。</span>
-                </label>
-              )}
-              {file && (
-                <button type="button" onClick={recognize} disabled={!allowSend || busy} className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#287f80] text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">
-                  {busy ? <><LoaderCircle size={18} className="animate-spin" />正在识别…</> : <><Upload size={18} />开始识别</>}
+          <p className="rounded-2xl border border-[#f1dfc8] bg-[#fff8ef] p-3.5 text-[14px] leading-6 text-[#805f43]">
+            拍清楚药盒、处方或医嘱上的文字，小暖会自动识别并整理，不用点发送。建议先遮住姓名、身份证号、就诊卡号等个人信息；识别结果请对照原件核对，药盒上的规格不代表每次服用剂量，小暖不会据此判断怎么吃药，也不会保存原照片。
+          </p>
+          {autoOpened && !saved && <p className="rounded-xl bg-[#edf6f4] px-3.5 py-3 text-[14px] leading-5 text-[#287f80]">您刚才提到了药品，我已经帮您打开拍照入口。对准药盒或医嘱拍一张，拍好了跟我说一声“我拍好了”就行。</p>}
+
+          {preview ? (
+            <div className="relative overflow-hidden rounded-2xl border border-[#dce8e7] bg-white">
+              <img src={preview} alt="待识别的医嘱照片" className="max-h-[30vh] w-full object-contain" />
+              {!saved && (
+                <button type="button" onClick={() => chooseFile(null)} className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-white/95 px-3 py-2 text-[13px] text-[#547477] shadow" aria-label="重新选择照片">
+                  <RotateCcw size={15} />重选
                 </button>
               )}
+            </div>
+          ) : (
+            <label className="flex min-h-40 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[#b9d8d3] bg-white text-center text-[#287f80]">
+              <Camera size={32} strokeWidth={1.7} />
+              <span className="text-[16px] font-medium">拍照或从相册选择</span>
+              <span className="text-[13px] text-[#769092]">拍好了跟我说“我拍好了”，小暖自动识别</span>
+              <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="sr-only" onChange={(event) => chooseFile(event.target.files?.[0])} />
+            </label>
+          )}
+
+          {busy && !saved && (
+            <p className="flex items-center gap-2 rounded-xl bg-[#edf6f4] px-3.5 py-3 text-[14px] text-[#287f80]">
+              <LoaderCircle size={17} className="animate-spin" />小暖正在看这张照片…
+            </p>
+          )}
+
+          {saved && (
+            <>
+              <p className="rounded-xl bg-[#edf6f4] px-3.5 py-3 text-[14px] leading-5 text-[#557176]">
+                <Check size={15} className="mr-1 inline align-text-top" />已自动记下 {savedCount} 项。小暖会念一遍记录的时间，问您对不对；不对就直接说，比如“阿司匹林改成一天两次”。也可以直接改下面的内容，改完会自动保存。
+              </p>
+              {readBack && <p className="rounded-xl bg-white px-3.5 py-3 text-[14px] leading-6 text-[#287f80]">小暖：{readBack}</p>}
             </>
           )}
 
-          {result && (
-            <>
-              <p className="rounded-xl bg-[#edf6f4] px-3.5 py-3 text-[14px] leading-5 text-[#557176]">
-                识别到 {result.document_type || "医嘱"}。剂量和频次都需要对照原件核实；模糊内容请手动修正，不确定就不要保存。
-              </p>
-              {items.map((item, index) => (
-                <article key={`${item.name}-${index}`} className="space-y-3 rounded-2xl border border-[#dce8e7] bg-white p-4">
-                  <div className="flex items-start gap-3">
-                    <input type="checkbox" checked={item.confirmed} onChange={(event) => updateItem(index, { confirmed: event.target.checked })} className="mt-1 h-5 w-5 accent-[#287f80]" aria-label={`确认核对${item.name || "药品"}`} />
-                    <label className="min-w-0 flex-1 text-[14px] font-medium text-[#287f80]">我已对照原件核对这项</label>
-                  </div>
-                  {item.uncertain_fields?.length > 0 && <p className="ml-8 text-[13px] text-[#ae684c]">图片不清楚：{item.uncertain_fields.join("、")}。请看原件修改。</p>}
-                  {item.evidence && <p className="ml-8 rounded-lg bg-[#f4f7f6] px-3 py-2 text-[13px] leading-5 text-[#769092]">图片原文：{item.evidence}</p>}
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {[["name", "药品名称"], ["dosage", "每次剂量"], ["frequency", "服用频次"], ["timing", "服用时机"]].map(([key, label]) => (
-                      <label key={key} className="text-[13px] text-[#769092]">
-                        {label}
-                        <input value={item[key] || ""} onChange={(event) => updateItem(index, { [key]: event.target.value })} placeholder="请核对，未写明可留空" className="mt-1 h-11 w-full rounded-xl border border-[#dce8e7] bg-[#fbfdfd] px-3 text-[15px] text-[#19383f] outline-none focus:border-[#78b6ae]" />
-                      </label>
-                    ))}
-                    <label className="text-[13px] text-[#769092] sm:col-span-2">
-                      每日提醒钟点（可选）
-                      <input value={item.reminderText} onChange={(event) => updateItem(index, { reminderText: event.target.value })} placeholder="仅填写医嘱明确写出的时刻，如 08:00" className="mt-1 h-11 w-full rounded-xl border border-[#dce8e7] bg-[#fbfdfd] px-3 text-[15px] text-[#19383f] outline-none focus:border-[#78b6ae]" />
-                    </label>
-                  </div>
-                </article>
-              ))}
-              {(result.warnings?.length > 0 || result.follow_up?.department || result.follow_up?.time_hint || result.unreadable?.length > 0) && (
-                <div className="space-y-2 rounded-2xl border border-[#dce8e7] bg-white p-4 text-[14px] leading-5 text-[#547477]">
-                  {result.warnings?.map((warning, i) => <p key={`w${i}`}>注意事项：{warning}</p>)}
-                  {(result.follow_up?.department || result.follow_up?.time_hint) && <p>复诊：{[result.follow_up.department, result.follow_up.time_hint].filter(Boolean).join("，")}</p>}
-                  {result.follow_up?.bring?.length > 0 && <p>复诊带上：{result.follow_up.bring.join("、")}</p>}
-                  {result.unreadable?.length > 0 && <p className="text-[#ae684c]">未读清楚：{result.unreadable.join("、")}</p>}
-                  <p className="border-t border-dashed border-[#dce8e7] pt-2 text-[12px] text-[#8a9ea0]">以上文字仅作识别参考，复诊和注意事项请对照原件。</p>
-                  <label className="flex items-start gap-2 border-t border-dashed border-[#dce8e7] pt-3 text-[13px] leading-5 text-[#547477]">
-                    <input type="checkbox" checked={confirmOther} onChange={(event) => setConfirmOther(event.target.checked)} className="mt-0.5 h-5 w-5 accent-[#287f80]" />
-                    我已核对以上注意事项和复诊信息，可以一并保存
+          {items.map((item, index) => (
+            <article key={`${item.name}-${index}`} className="space-y-3 rounded-2xl border border-[#dce8e7] bg-white p-4">
+              {item.uncertain_fields?.length > 0 && <p className="text-[13px] text-[#ae684c]">图片不清楚：{item.uncertain_fields.join("、")}。请看原件修改。</p>}
+              {item.evidence && <p className="rounded-lg bg-[#f4f7f6] px-3 py-2 text-[13px] leading-5 text-[#769092]">图片原文：{item.evidence}</p>}
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {[["name", "药品名称"], ["dosage", "每次剂量"], ["frequency", "服用频次"], ["timing", "服用时机"]].map(([key, label]) => (
+                  <label key={key} className="text-[13px] text-[#769092]">
+                    {label}
+                    <input value={item[key] || ""} onChange={(event) => updateItem(index, { [key]: event.target.value })} placeholder="未写明可留空" className="mt-1 h-11 w-full rounded-xl border border-[#dce8e7] bg-[#fbfdfd] px-3 text-[15px] text-[#19383f] outline-none focus:border-[#78b6ae]" />
                   </label>
-                </div>
-              )}
-              <button type="button" onClick={() => { setResult(null); setItems([]); setAllowSend(false); setConfirmOther(false); }} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#dce8e7] bg-white text-[14px] text-[#547477]">
-                <RotateCcw size={16} />换一张照片
-              </button>
-            </>
+                ))}
+                <label className="text-[13px] text-[#769092] sm:col-span-2">
+                  每日提醒钟点
+                  <input value={item.reminderText || ""} onChange={(event) => updateItem(index, { reminderText: event.target.value })} placeholder="如 08:00, 18:00" className="mt-1 h-11 w-full rounded-xl border border-[#dce8e7] bg-[#fbfdfd] px-3 text-[15px] text-[#19383f] outline-none focus:border-[#78b6ae]" />
+                  {item.reminderSource === "default" && <span className="mt-1 block text-[12px] text-[#8a9ea0]">医嘱没写时间，小暖按一天3次排在非睡眠时段，可以改。</span>}
+                </label>
+              </div>
+            </article>
+          ))}
+
+          {result && !saved && (result.warnings?.length > 0 || result.follow_up?.department || result.follow_up?.time_hint || result.unreadable?.length > 0) && (
+            <div className="space-y-2 rounded-2xl border border-[#dce8e7] bg-white p-4 text-[14px] leading-5 text-[#547477]">
+              {result.warnings?.map((warning, i) => <p key={`w${i}`}>注意事项：{warning}</p>)}
+              {(result.follow_up?.department || result.follow_up?.time_hint) && <p>复诊：{[result.follow_up.department, result.follow_up.time_hint].filter(Boolean).join("，")}</p>}
+              {result.follow_up?.bring?.length > 0 && <p>复诊带上：{result.follow_up.bring.join("、")}</p>}
+              {result.unreadable?.length > 0 && <p className="text-[#ae684c]">未读清楚：{result.unreadable.join("、")}</p>}
+            </div>
           )}
+
           {error && <p role="alert" className="rounded-xl bg-[#fff0eb] px-3.5 py-3 text-[14px] leading-5 text-[#ae5d48]">{error}</p>}
         </div>
 
-        {result && (
+        {(file || saved) && (
           <footer className="border-t border-[#dce8e7] bg-white/80 px-5 py-3" style={{ paddingBottom: "max(14px, env(safe-area-inset-bottom))" }}>
-            <button type="button" onClick={saveConfirmed} disabled={!canSave || busy} className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#287f80] text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">
-              {busy ? <><LoaderCircle size={18} className="animate-spin" />保存中…</> : <><Check size={18} />{confirmedCount > 0 ? `保存已核对的 ${confirmedCount} 项` : "保存已核对的医嘱信息"}</>}
+            <button type="button" onClick={() => { resetAll(); onRetake?.(); }} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#dce8e7] bg-white text-[14px] text-[#547477]">
+              <RotateCcw size={16} />换一张照片
             </button>
-            <p className="mt-2 text-center text-[12px] leading-5 text-[#8a9ea0]">未勾选的药品不会保存，也不会设置提醒</p>
           </footer>
         )}
       </section>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic, Stethoscope, Headphones, Brain, X, Pill, Copy, Check, Share2, Sparkles, CaseSensitive, Gauge, RotateCcw, LoaderCircle } from "lucide-react";
+import { Mic, Stethoscope, Headphones, Brain, X, Pill, Copy, Check, Share2, Sparkles, CaseSensitive, Gauge, RotateCcw, LoaderCircle, Camera } from "lucide-react";
 import Companion from "./Companion.jsx";
 import BrandMark from "./BrandMark.jsx";
 import MemoryPanel, { CardView } from "./MemoryPanel.jsx";
@@ -10,7 +10,7 @@ import { getSpeechSpeed, isCaptionsEnabled, setAudioMuted, setCaptionsEnabled, s
 import { syncMedicationReminders, normalizeReminderTimes, remindersEnabled } from "../lib/reminders.js";
 
 export default function CallScreen() {
-  const { phase, micOn, micConnecting, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, pauseMic, resumeListening, repeatLastReply, speakWelcome, hasLastReply, voiceCommand } = useConversation();
+  const { phase, micOn, micConnecting, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, pauseMic, resumeListening, repeatLastReply, speakWelcome, hasLastReply, voiceCommand, speak, markPhotoConfirmAwaiting } = useConversation();
   const [speakerOn, setSpeakerOn] = useState(() => {
     try { return localStorage.getItem("xn_speaker_on") !== "0"; } catch { return true; }
   });
@@ -22,6 +22,8 @@ export default function CallScreen() {
   const [shareStatus, setShareStatus] = useState("");
   const [photoOpen, setPhotoOpen] = useState(false);
   const [photoAutoOpened, setPhotoAutoOpened] = useState(false);
+  const [photoDoneSignal, setPhotoDoneSignal] = useState(0); // 语音"我拍好了"计数
+  const [photoConfirmAwaiting, setPhotoConfirmAwaiting] = useState(false); // 小暖复述完时间、等用户说对不对
   const [voiceNotice, setVoiceNotice] = useState("");
   const handledVoiceCommandRef = useRef(null);
   const [speechSpeed, setSpeedState] = useState(getSpeechSpeed);
@@ -38,6 +40,18 @@ export default function CallScreen() {
   }, [speakerOn]);
   useEffect(() => setSpeechSpeed(speechSpeed), [speechSpeed]);
 
+  // 等确认时用户说起了别的（没说对/不对）：收起拍照面板，回到正常对话
+  useEffect(() => {
+    const onCancel = () => {
+      setPhotoOpen(false);
+      setPhotoAutoOpened(false);
+      setPhotoConfirmAwaiting(false);
+      markPhotoConfirmAwaiting(false);
+    };
+    window.addEventListener("xn-photo-confirm-cancel", onCancel);
+    return () => window.removeEventListener("xn-photo-confirm-cancel", onCancel);
+  }, []);
+
   function toggleCaptions() {
     const next = !captionsOn;
     setCaptionsOn(next);
@@ -53,15 +67,29 @@ export default function CallScreen() {
   }
 
   function openPhotoPanel(autoOpened = false) {
-    pauseMic();
+    // 麦克风保持开启：用户要对着小暖说"我拍好了"、确认时间对不对
     setPhotoAutoOpened(autoOpened);
     setPhotoOpen(true);
+    activateMic();
   }
 
   function closePhotoPanel() {
     setPhotoOpen(false);
     setPhotoAutoOpened(false);
+    setPhotoConfirmAwaiting(false);
+    markPhotoConfirmAwaiting(false);
     activateMic();
+  }
+
+  function handlePhotoReadBack(text) {
+    setPhotoConfirmAwaiting(true);
+    markPhotoConfirmAwaiting(true);
+    speak(text); // 小暖念一遍记录的时间，然后问对不对
+  }
+
+  function handlePhotoRetake() {
+    setPhotoConfirmAwaiting(false);
+    markPhotoConfirmAwaiting(false);
   }
 
   function openMemoryPanel() {
@@ -88,9 +116,15 @@ export default function CallScreen() {
   useEffect(() => {
     if (!voiceCommand || voiceCommand.id === handledVoiceCommandRef.current) return;
     handledVoiceCommandRef.current = voiceCommand.id;
-    if (photoOpen || memOpen) return;
+    // 拍照面板开着时只放行拍照流程的指令（说"我拍好了/对/不对"用），其他面板不开
+    const photoFlow = new Set(["photo_done", "confirm_yes", "confirm_no"]);
+    if (memOpen) return;
+    if (photoOpen && !photoFlow.has(voiceCommand.command)) return;
     const messages = {
-      photo: "我帮您打开拍照入口了。点一下相机区域就能拍药盒或医嘱。",
+      photo: "我帮您打开拍照入口了。对准药盒或医嘱拍一张，拍好了跟我说一声。",
+      photo_done: "好的，我来看这张照片。",
+      confirm_yes: "好的，已经记好了。",
+      confirm_no: "好的，您说怎么改，我来改。",
       memory: "我帮您打开记录了。可以说要查看、修改或删除哪一项；删除前需要您确认。",
       dispenser: "我打开了泡药和健康茶设备方案，可以查看准备情况。现在还没有接入实体设备。",
       captions_on: "字幕已打开，我说的话会显示在屏幕上。",
@@ -109,6 +143,25 @@ export default function CallScreen() {
     setVoiceNotice(messages[voiceCommand.command] || "好的，我帮您切换好了。");
     switch (voiceCommand.command) {
       case "photo": openPhotoPanel(true); break;
+      case "photo_done":
+        if (photoOpen) {
+          setPhotoDoneSignal((n) => n + 1);
+          speak("好的，我来看这张照片。");
+        } else {
+          openPhotoPanel(true);
+          speak("先拍一张药盒或医嘱的照片，拍好了跟我说一声。");
+        }
+        break;
+      case "confirm_yes":
+        if (photoConfirmAwaiting) {
+          closePhotoPanel();
+          speak("好的，已经记好了，到点我会提醒您。");
+        }
+        break;
+      case "confirm_no":
+        // 只说"不对"时不替用户改：关上面板，让豆包模型听着用户的原话改正并更新记录
+        if (photoConfirmAwaiting) closePhotoPanel();
+        break;
       case "memory": openMemoryPanel(); break;
       case "dispenser": setFocusDispenser(true); openMemoryPanel(); break;
       case "captions_on": setCaptionsOn(true); setCaptionsEnabled(true); break;
@@ -125,8 +178,9 @@ export default function CallScreen() {
       case "mic_off": pauseMic(); break;
       default: break;
     }
-    resumeListening();
-  }, [voiceCommand, phase, photoOpen, memOpen]);
+    // confirm_no 要把用户的改正原话留给模型回复，不能打断
+    if (voiceCommand.command !== "confirm_no") resumeListening();
+  }, [voiceCommand, phase, photoOpen, memOpen, photoConfirmAwaiting]);
 
   async function copyVisitSummary(card, voiceTriggered = false) {
     const s = card?.visit_summary || {};
@@ -255,10 +309,16 @@ export default function CallScreen() {
             <p className="mt-0.5 text-[11px] tracking-wide text-[#89a0a0]">把就医信息说清楚、记明白</p>
           </div>
         </div>
-        <button type="button" onClick={openMemoryPanel}
-          className="flex h-11 items-center gap-2 rounded-2xl border border-white/90 bg-white/80 px-3.5 text-[13px] font-medium text-[#547477] shadow-sm transition hover:bg-white active:scale-[.98]">
-          <Brain size={17} className="text-[#318a89]" /> 我的记录
-        </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => openPhotoPanel(false)} aria-label="拍照识药" title="拍照识药"
+            className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/90 bg-white/80 text-[#318a89] shadow-sm transition hover:bg-white active:scale-[.98]">
+            <Camera size={19} strokeWidth={1.8} />
+          </button>
+          <button type="button" onClick={openMemoryPanel}
+            className="flex h-11 items-center gap-2 rounded-2xl border border-white/90 bg-white/80 px-3.5 text-[13px] font-medium text-[#547477] shadow-sm transition hover:bg-white active:scale-[.98]">
+            <Brain size={17} className="text-[#318a89]" /> 我的记录
+          </button>
+        </div>
       </header>
 
       {nextDose && (
@@ -356,7 +416,16 @@ export default function CallScreen() {
       </footer>
 
       {memOpen && <MemoryPanel onClose={closeMemoryPanel} focusDispenser={focusDispenser} />}
-      {photoOpen && <PrescriptionPhotoPanel autoOpened={photoAutoOpened} onClose={closePhotoPanel} onSaved={closePhotoPanel} />}
+      {photoOpen && (
+        <PrescriptionPhotoPanel
+          autoOpened={photoAutoOpened}
+          onClose={closePhotoPanel}
+          onSpeak={speak}
+          onReadBack={handlePhotoReadBack}
+          onRetake={handlePhotoRetake}
+          doneSignal={photoDoneSignal}
+        />
+      )}
 
       {activationOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#19383f]/35 px-6 backdrop-blur-[5px]"
@@ -366,7 +435,7 @@ export default function CallScreen() {
               <BrandMark className="h-12 w-12" />
             </div>
             <h2 id="activation-title" className="mt-4 text-[20px] font-semibold tracking-tight text-[#19383f]">点击屏幕，激活小暖</h2>
-            <p className="mt-2 text-[13px] leading-6 text-[#789092]">开启麦克风后直接说就行，例如“帮我看药盒”“打开字幕”“说慢一点”或“打开我的记录”，小暖会帮您打开相应功能。</p>
+            <p className="mt-2 text-[13px] leading-6 text-[#789092]">开启麦克风后直接说就行，例如“帮我看药盒”，拍好了说“我拍好了”；也可以说“打开字幕”“说慢一点”或“打开我的记录”，小暖会帮您打开相应功能。</p>
             <button type="button" onClick={activateWithWelcome}
               className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#287f80] text-[14px] font-semibold text-white shadow-[0_8px_20px_rgba(40,127,128,.2)] transition hover:bg-[#216f72] active:scale-[.98]">
               <Mic size={17} />点击激活并开启麦克风

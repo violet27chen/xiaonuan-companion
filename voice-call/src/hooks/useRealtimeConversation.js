@@ -11,9 +11,16 @@ export const PHASE_TEXT = {
   idle: "点一下话筒，跟我说话",
 };
 
-function voiceCommandFor(text) {
+function voiceCommandFor(text, opts = {}) {
   const t = String(text || "").replace(/[，。！？、,.!?\s]/g, "");
   if (/智能冲药机|自动冲药|冲药机方案|冲药设备|设备准备清单|智能泡药|自动泡药|泡药机|泡茶设备|健康茶设备/.test(t)) return "dispenser";
+  // 拍照完成：说完自动识别面板里刚拍的照片（要排在"药盒/拍照"之前，"药盒拍好了"才算拍完）
+  if (/拍好了|拍完了|照好了|拍好喽|照片拍好|已经拍好/.test(t)) return "photo_done";
+  // 等小暖复述服药时间时的确认：只有真的在等确认才认，免得把聊天里的"对"当成确认
+  if (opts.awaitingPhotoConfirm) {
+    if (/^对[了的呀嗯啊]?$|^没错[了的呀]?$|^是的[了的]?$|^嗯+$|^可以[了的]?$|^好[了的]?$|^行[了的]?$/.test(t)) return "confirm_yes";
+    if (/不对|错了|不是这样|不是这个|要改|改成|修改|换一下|重新说/.test(t)) return "confirm_no";
+  }
   if (!/(不想|不需要|不要|别|不用|先不).{0,6}(拍照|拍一张|药盒|药瓶|处方|医嘱|照片)/.test(t)
       && /拍照|拍一张|拍给小暖|药盒|药瓶|处方|医嘱|药品说明书|药怎么吃|怎么服用|如何服用|药名|认药|用法用量|看.{0,6}药|这是什么药/.test(t)) return "photo";
   if (/看完医生|刚看完医生|已经看完|看完了/.test(t)) return "";
@@ -154,6 +161,8 @@ export function useConversation() {
   const sentFramesRef = useRef(0);
   const audioWarnRef = useRef(false);
   const micStartAtRef = useRef(0);
+  // 拍照复述后的等确认状态：只有这时才把"对/不对"当确认，避免误伤正常聊天
+  const photoConfirmRef = useRef(false);
   // 字幕文本归属：文本按「响应轮次」归属，textGenRef 记录当前 outputTextRef
   // 属于哪一轮（= responseGenRef 的值）。豆包的「打招呼」类响应（chat_tts_text）
   // 不会下发 response.created，若不清归属，上一轮的文本会残留并与新一轮 delta
@@ -323,10 +332,15 @@ export function useConversation() {
           const text = String(event.transcript || event.text || transcriptRef.current).trim();
           transcriptRef.current = text;
           if (text) {
-            const command = voiceCommandFor(text);
+            const command = voiceCommandFor(text, { awaitingPhotoConfirm: photoConfirmRef.current });
             if (command) {
               setVoiceCommand({ id: `${Date.now()}-${Math.random()}`, command, repeatText: lastReplyRef.current });
-              sendEvent({ type: "response.cancel", event_id: eventId() });
+              // confirm_no（"不对，改成一天两次"）要让豆包模型自己去改记忆并回复，不能取消
+              if (command !== "confirm_no") sendEvent({ type: "response.cancel", event_id: eventId() });
+            } else if (photoConfirmRef.current) {
+              // 等确认时用户说起了别的：收起拍照面板，回到正常对话（记录已经保存）
+              photoConfirmRef.current = false;
+              window.dispatchEvent(new Event("xn-photo-confirm-cancel"));
             }
           }
           setPhase("think");
@@ -724,9 +738,25 @@ export function useConversation() {
     setCards((previous) => previous.filter((_, i) => i !== index));
   }
 
+  /** 让小暖念一段指定的话（拍照复述、操作提示用）；麦克风没开就只更新界面提示 */
+  function speak(text) {
+    if (!text) return;
+    if (!socketReadyRef.current) {
+      setMicError("请先点话筒开启语音，小暖才能说话。");
+      return;
+    }
+    requestSpeechText(text);
+  }
+
+  /** 标记"正在等用户确认拍照记录的时间"：控制"对/不对"是否当确认词 */
+  function markPhotoConfirmAwaiting(value) {
+    photoConfirmRef.current = !!value;
+  }
+
   return {
     phase, micOn, micConnecting, level, subtitle, cards, dismissCard, demoMode, micError,
     toggleMic, activateMic, pauseMic, resumeListening, repeatLastReply,
     speakWelcome, hasLastReply: !!lastReplyRef.current, voiceCommand,
+    speak, markPhotoConfirmAwaiting,
   };
 }
