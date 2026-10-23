@@ -6,12 +6,14 @@ import MemoryPanel, { CardView } from "./MemoryPanel.jsx";
 import PrescriptionPhotoPanel from "./PrescriptionPhotoPanel.jsx";
 import { PHASE_TEXT, useConversation } from "../hooks/useRealtimeConversation.js";
 import { fetchMemory } from "../lib/auth.js";
-import { getSpeechSpeed, setAudioMuted, setSpeechSpeed } from "../lib/ai.js";
+import { getSpeechSpeed, isCaptionsEnabled, setAudioMuted, setCaptionsEnabled, setSpeechSpeed } from "../lib/ai.js";
 import { syncMedicationReminders, normalizeReminderTimes, remindersEnabled } from "../lib/reminders.js";
 
 export default function CallScreen() {
-  const { phase, micOn, micConnecting, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, pauseMic, resumeListening, repeatLastReply, speakWelcome, hasLastReply, mode, detectedMode, setMode, voiceCommand } = useConversation();
-  const [speakerOn, setSpeakerOn] = useState(true);
+  const { phase, micOn, micConnecting, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, pauseMic, resumeListening, repeatLastReply, speakWelcome, hasLastReply, voiceCommand } = useConversation();
+  const [speakerOn, setSpeakerOn] = useState(() => {
+    try { return localStorage.getItem("xn_speaker_on") !== "0"; } catch { return true; }
+  });
   const [activationOpen, setActivationOpen] = useState(true);
   const [memOpen, setMemOpen] = useState(false);
   const [focusDispenser, setFocusDispenser] = useState(false);
@@ -23,13 +25,24 @@ export default function CallScreen() {
   const [voiceNotice, setVoiceNotice] = useState("");
   const handledVoiceCommandRef = useRef(null);
   const [speechSpeed, setSpeedState] = useState(getSpeechSpeed);
+  // 字幕默认关闭（和豆包一样），开了才显示 AI 说的话；开关状态持久化
+  const [captionsOn, setCaptionsOn] = useState(isCaptionsEnabled);
   const [largeCaptions, setLargeCaptions] = useState(() => {
     try { return localStorage.getItem("xn_large_captions") === "1"; } catch { return false; }
   });
   const phaseText = PHASE_TEXT[phase] || "";
 
   useEffect(() => setAudioMuted(!speakerOn), [speakerOn]);
+  useEffect(() => {
+    try { localStorage.setItem("xn_speaker_on", speakerOn ? "1" : "0"); } catch {}
+  }, [speakerOn]);
   useEffect(() => setSpeechSpeed(speechSpeed), [speechSpeed]);
+
+  function toggleCaptions() {
+    const next = !captionsOn;
+    setCaptionsOn(next);
+    setCaptionsEnabled(next);
+  }
 
   function toggleLargeCaptions() {
     setLargeCaptions((value) => {
@@ -63,7 +76,11 @@ export default function CallScreen() {
   }
 
   function activateWithWelcome() {
-    const greeting = "你好，我是小暖，欢迎回来。今天想聊什么？";
+    // 开场白按进入次数缩短：第一次约十个字，之后几个字，避免每次都要听一长串
+    let visits = 0;
+    try { visits = Number(localStorage.getItem("xn_visit_count") || "0"); } catch {}
+    try { localStorage.setItem("xn_visit_count", String(visits + 1)); } catch {}
+    const greeting = visits === 0 ? "您好，我是小暖。" : "来啦，请说。";
     setActivationOpen(false);
     speakWelcome(greeting);
   }
@@ -74,14 +91,10 @@ export default function CallScreen() {
     if (photoOpen || memOpen) return;
     const messages = {
       photo: "我帮您打开拍照入口了。点一下相机区域就能拍药盒或医嘱。",
-      visit_post: "已经切到看诊后整理。想整理药盒或医嘱时，直接告诉我。",
-      visit_pre: "已经切到看诊前准备，可以告诉我哪里不舒服、想问医生什么。",
-      mode_auto: "已经切回自动识别模式。",
-      mode_post: "已经切到看诊后整理。",
-      mode_pre: "已经切到看诊前准备。",
-      mode_chat: "已经切到日常聊天。",
       memory: "我帮您打开记录了。可以说要查看、修改或删除哪一项；删除前需要您确认。",
       dispenser: "我打开了泡药和健康茶设备方案，可以查看准备情况。现在还没有接入实体设备。",
+      captions_on: "字幕已打开，我说的话会显示在屏幕上。",
+      captions_off: "字幕已关闭。",
       captions_large: "字幕已放大。",
       captions_small: "字幕已恢复普通大小。",
       speech_slow: "我会说慢一点。",
@@ -96,14 +109,10 @@ export default function CallScreen() {
     setVoiceNotice(messages[voiceCommand.command] || "好的，我帮您切换好了。");
     switch (voiceCommand.command) {
       case "photo": openPhotoPanel(true); break;
-      case "visit_post": setMode("post"); break;
-      case "visit_pre": setMode("pre"); break;
-      case "mode_auto": setMode("auto"); break;
-      case "mode_post": setMode("post"); break;
-      case "mode_pre": setMode("pre"); break;
-      case "mode_chat": setMode("auto"); break;
       case "memory": openMemoryPanel(); break;
       case "dispenser": setFocusDispenser(true); openMemoryPanel(); break;
+      case "captions_on": setCaptionsOn(true); setCaptionsEnabled(true); break;
+      case "captions_off": setCaptionsOn(false); setCaptionsEnabled(false); break;
       case "captions_large": setLargeCaptions(true); break;
       case "captions_small": setLargeCaptions(false); break;
       case "speech_slow": setSpeedState("slow"); break;
@@ -229,7 +238,6 @@ export default function CallScreen() {
     return () => { alive = false; clearInterval(timer); };
   }, []);
 
-  const busy = phase === "think" || phase === "speak";
   return (
     <div className={`relative flex h-dvh flex-col overflow-hidden bg-[#f2f7f6] text-[#19383f]${largeCaptions ? " large-captions" : ""}`}>
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -253,22 +261,15 @@ export default function CallScreen() {
         </button>
       </header>
 
-      <div className="relative z-10 mx-auto mt-4 flex w-[calc(100%-40px)] max-w-[420px] items-center rounded-2xl border border-white/90 bg-white/75 p-1 shadow-[0_6px_24px_rgba(42,87,87,.06)]">
-        {[["auto", "自动识别"], ["pre", "就诊前"], ["post", "就诊后"]].map(([value, label]) => (
-          <button key={value} type="button" disabled={busy} onClick={() => setMode(value)} aria-pressed={mode === value}
-            className={`flex-1 rounded-xl px-2 py-2.5 text-[12px] font-medium transition ${mode === value ? "bg-[#287f80] text-white shadow-[0_4px_12px_rgba(40,127,128,.2)]" : "text-[#789092] hover:text-[#315b60]"} disabled:opacity-60`}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <p className="relative z-10 mt-1 text-center text-[11px] text-[#89a0a0]">
-        {mode === "auto" ? `自动识别：${{ pre: "就诊前准备", post: "就诊后整理", chat: "日常聊天" }[detectedMode] || "等待识别"}` : "手动选择模式"}
-      </p>
-
       <div className="relative z-10 mx-auto mt-2 flex w-[calc(100%-40px)] max-w-[420px] items-center justify-center gap-2">
-        <button type="button" onClick={toggleLargeCaptions} aria-pressed={largeCaptions} className={`flex h-10 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium ${largeCaptions ? "bg-[#287f80] text-white" : "bg-white/80 text-[#547477]"}`}>
-          <CaseSensitive size={16} />{largeCaptions ? "字幕已放大" : "字幕放大"}
+        <button type="button" onClick={toggleCaptions} aria-pressed={captionsOn} className={`flex h-10 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium ${captionsOn ? "bg-[#287f80] text-white" : "bg-white/80 text-[#547477]"}`}>
+          <CaseSensitive size={16} />{captionsOn ? "字幕已开" : "字幕"}
         </button>
+        {captionsOn && (
+          <button type="button" onClick={toggleLargeCaptions} aria-pressed={largeCaptions} className={`flex h-10 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium ${largeCaptions ? "bg-[#287f80] text-white" : "bg-white/80 text-[#547477]"}`}>
+            <CaseSensitive size={16} />{largeCaptions ? "字幕已放大" : "字幕放大"}
+          </button>
+        )}
         <button type="button" onClick={() => setSpeedState((speed) => speed === "slow" ? "normal" : "slow")} aria-pressed={speechSpeed === "slow"} className={`flex h-10 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium ${speechSpeed === "slow" ? "bg-[#287f80] text-white" : "bg-white/80 text-[#547477]"}`}>
           <Gauge size={16} />{speechSpeed === "slow" ? "慢速朗读" : "自然语速"}
         </button>
@@ -364,7 +365,7 @@ export default function CallScreen() {
               <BrandMark className="h-12 w-12" />
             </div>
             <h2 id="activation-title" className="mt-4 text-[20px] font-semibold tracking-tight text-[#19383f]">点击屏幕，激活小暖</h2>
-            <p className="mt-2 text-[13px] leading-6 text-[#789092]">开启麦克风后直接说就行，例如“帮我看药盒”“放大字幕”或“打开我的记录”，小暖会帮您打开相应功能。</p>
+            <p className="mt-2 text-[13px] leading-6 text-[#789092]">开启麦克风后直接说就行，例如“帮我看药盒”“打开字幕”“说慢一点”或“打开我的记录”，小暖会帮您打开相应功能。</p>
             <button type="button" onClick={activateWithWelcome}
               className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#287f80] text-[14px] font-semibold text-white shadow-[0_8px_20px_rgba(40,127,128,.2)] transition hover:bg-[#216f72] active:scale-[.98]">
               <Mic size={17} />点击激活并开启麦克风

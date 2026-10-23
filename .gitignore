@@ -3,6 +3,12 @@
 __pycache__/
 *.pyc
 .conda/
+.venv/
+server/.venv/
+.env.server
+server/.env
+server/.localdata*/
+server/.uv-cache/
 node_modules/
 .DS_Store
 .taste-skill/
@@ -30,3 +36,4 @@ voice-call/node_modules/
 Temp/
 edgeone-build-source/
 dist-edgeone/
+android/keystore/

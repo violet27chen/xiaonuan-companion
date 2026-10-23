@@ -23,7 +23,9 @@ def get_model(env: dict, temperature: float = 0.3) -> ChatOpenAI:
         )
         try:
             # 关闭长思考，保持对话和结构化提取响应速度。
-            _model_cache[key] = ChatOpenAI(**common, model_kwargs={"thinking": {"type": "disabled"}})
+            # 必须走 extra_body：model_kwargs 会被 langchain-openai 展开成
+            # create() 的关键字参数，SDK 会报 unexpected keyword 'thinking'。
+            _model_cache[key] = ChatOpenAI(**common, extra_body={"thinking": {"type": "disabled"}})
         except Exception:
             _model_cache[key] = ChatOpenAI(**common)
     return _model_cache[key]

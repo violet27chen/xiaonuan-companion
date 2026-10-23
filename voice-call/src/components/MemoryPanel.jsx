@@ -4,7 +4,7 @@ import { fetchMemory, saveMemory, clearMemory, deleteMemoryItem, logout, getUser
 import { enableMedicationReminders, disableMedicationReminders, remindersEnabled, normalizeReminderTimes, syncMedicationReminders } from "../lib/reminders.js";
 import SmartDispenserPanel from "./SmartDispenserPanel.jsx";
 
-/* 小暖保存的记忆：档案 / 用药提醒 / 生成的卡片 / 最近的对话 */
+/* 小暖保存的记忆：档案 / 用药记录 / 生成的卡片（只存 AI 整理的结构化信息，不存对话原文） */
 export function CardView({ card }) {
   if (!card || typeof card !== "object") return null;
   if (card.type === "pre") {
@@ -423,13 +423,6 @@ export default function MemoryPanel({ onClose, focusDispenser = false }) {
                   </DeletableRow>
                 ))}
               </Section>
-              <Section title="最近的对话" empty="还没有聊过天">
-                {(mem.recent || []).map((m, i) => (
-                  <DeletableRow key={i} label="最近对话" busy={deletingItems.has(`recent-${i}`)} onDelete={() => removeItem(`recent-${i}`, { category: "recent", index: i, expected: m })}>
-                    <p><span className="mr-1.5 text-[13px] text-[#769092]">{m.who}</span>{m.text}</p>
-                  </DeletableRow>
-                ))}
-              </Section>
             </>
           )}
 
@@ -474,7 +467,7 @@ export default function MemoryPanel({ onClose, focusDispenser = false }) {
               <span className="text-[16px] font-medium">确认清空所有记忆？</span>
             </div>
             <p className="mb-5 text-[14px] leading-relaxed text-[#557176]">
-              会把你的档案、用药提醒、保存的卡片和最近对话全部删除。登录账号本身保留，可以重新开始记录。
+              会把你的档案、用药记录和保存的卡片全部删除。登录账号本身保留，可以重新开始记录。
             </p>
             <div className="flex gap-3">
               <button type="button" onClick={() => setConfirmClear(false)} className="flex-1 rounded-xl border border-[#dce8e7] py-2.5 text-[14px] text-[#557176]">

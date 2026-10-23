@@ -1,0 +1,21 @@
+[Unit]
+Description=Xiaonuan Companion API
+After=network.target
+
+[Service]
+Type=simple
+User=xiaonuan
+Group=xiaonuan
+WorkingDirectory=/opt/xiaonuan
+EnvironmentFile=/etc/xiaonuan/xiaonuan.env
+Environment=XIAONUAN_DATA_DIR=/var/lib/xiaonuan
+ExecStart=/opt/xiaonuan/.venv/bin/uvicorn server.app:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/xiaonuan
+
+[Install]
+WantedBy=multi-user.target

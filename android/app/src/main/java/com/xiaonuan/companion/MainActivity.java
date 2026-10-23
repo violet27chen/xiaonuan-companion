@@ -17,12 +17,13 @@ import android.webkit.WebViewClient;
 import android.webkit.ValueCallback;
 
 /**
- * 陪诊小暖：WebView 壳。加载 EdgeOne 线上页面，
+ * 陪诊小暖：WebView 壳。加载经 EdgeOne CDN 加速的小暖服务器页面，
  * 授予麦克风权限以支持网页内语音对话（录音 + 语音播报）。
  */
 public class MainActivity extends Activity {
 
-    private static final String SITE = "https://xiaonuan.27c.site";
+    private static final String SITE = "https://ai.27c.site";
+    private static final String SITE_HOST = "ai.27c.site";
     private static final int REQ_MIC = 1;
     private static final int REQ_NOTIFICATIONS = 2;
     private static final int REQ_FILE = 3;
@@ -49,7 +50,7 @@ public class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
-                if ("https".equals(uri.getScheme()) && "xiaonuan.27c.site".equals(uri.getHost())) return false;
+                if ("https".equals(uri.getScheme()) && SITE_HOST.equals(uri.getHost())) return false;
                 try {
                     Intent intent = "tel".equals(uri.getScheme())
                             ? new Intent(Intent.ACTION_DIAL, uri)
@@ -81,7 +82,7 @@ public class MainActivity extends Activity {
                     public void run() {
                         Uri origin = request.getOrigin();
                         if (origin == null || !"https".equals(origin.getScheme())
-                                || !"xiaonuan.27c.site".equals(origin.getHost())) {
+                                || !SITE_HOST.equals(origin.getHost())) {
                             request.deny();
                             return;
                         }

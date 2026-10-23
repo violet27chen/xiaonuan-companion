@@ -7,7 +7,6 @@ import time
 
 SESSION_TTL = 90 * 24 * 3600  # 会话 90 天
 MAX_CARDS = 20                # 每用户最多留存的卡片数
-MAX_RECENT = 40               # 每用户最多留存的近期对话条数
 _USER_RE = re.compile(r"^\w{2,20}$")  # 字母/数字/下划线/汉字，2-20 个
 
 
@@ -127,8 +126,12 @@ async def logout(ctx, token: str):
         pass
 
 
-async def save_memory(ctx, username: str, *, profile=None, profile_updates=None, medications=None, cards=None, heard=None, reply=None, replace_medications=False):
-    """把一轮对话里值得记住的东西按用户落下（KV 持久化，失败不影响对话）"""
+async def save_memory(ctx, username: str, *, profile=None, profile_updates=None, medications=None, cards=None, replace_medications=False):
+    """把一轮对话里 AI 整理出的结构化信息按用户落下（KV 持久化，失败不影响对话）。
+
+    只存档案/用药/卡片这类整理结果，不存对话原文——老人自己知道说过什么，
+    记忆面板的用途是回看小暖整理出来的信息。
+    """
     kv = _kv(ctx)
     if kv is None:
         return
@@ -174,29 +177,20 @@ async def save_memory(ctx, username: str, *, profile=None, profile_updates=None,
             ts = int(time.time() * 1000)
             old.extend({"ts": ts, "card": c} for c in cards)
             await kv.set(cards_key(username), old[-MAX_CARDS:])
-        if reply:
-            old = await kv.get(recent_key(username)) or []
-            if not isinstance(old, list):
-                old = []
-            if heard:
-                old.append({"who": "您", "text": str(heard)[:500]})
-            old.append({"who": "小暖", "text": str(reply)[:1000]})
-            await kv.set(recent_key(username), old[-MAX_RECENT:])
     except Exception:
         pass
 
 
 async def load_memory(ctx, username: str) -> dict:
-    """记忆面板数据：档案 / 用药提醒 / 保存的卡片 / 最近的对话"""
+    """记忆面板数据：档案 / 用药记录 / 保存的卡片（只含 AI 整理的结构化信息）"""
     kv = _kv(ctx)
     if kv is None:
         return {}
-    out = {"profile": {}, "medications": [], "cards": [], "recent": []}
+    out = {"profile": {}, "medications": [], "cards": []}
     try:
         out["profile"] = (await kv.get(profile_key(username))) or {}
         out["medications"] = _sanitize_meds(await kv.get(meds_key(username)))
         out["cards"] = (await kv.get(cards_key(username))) or []
-        out["recent"] = (await kv.get(recent_key(username))) or []
     except Exception:
         pass
     return out
@@ -230,7 +224,7 @@ def _sanitize_meds(raw) -> list:
 
 
 async def clear_memory(ctx, username: str):
-    """一键清空：档案、用药、卡片、最近对话都清掉（登录态保留）"""
+    """一键清空：档案、用药、卡片（登录态保留）；同时清掉旧版本的对话流水"""
     kv = _kv(ctx)
     if kv is None:
         return
@@ -258,7 +252,6 @@ async def delete_memory_item(ctx, username: str, *, category: str, index=None, k
     storage_keys = {
         "medications": meds_key(username),
         "cards": cards_key(username),
-        "recent": recent_key(username),
     }
     storage_key = storage_keys.get(category)
     if not storage_key:

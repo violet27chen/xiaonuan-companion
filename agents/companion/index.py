@@ -110,7 +110,6 @@ async def handler(ctx):
         return result
 
     message = (body.get("message") or "").strip()
-    mode = (body.get("mode") or "auto").strip()  # auto 自动识别；pre/post 为人工指定
 
     if not message:
         return {"error": "请提供需要整理的文字"}, 400
@@ -120,14 +119,8 @@ async def handler(ctx):
     if cleaned:
         message = cleaned                # 传给模型的指令去掉唤醒称呼
 
-    # 自动模式优先识别清晰的就诊后医嘱，其次识别就诊前准备；普通聊天不强行套医疗流程。
-    if mode == "auto":
-        effective_mode = _detect_mode(message)
-    elif mode in {"pre", "post"}:
-        effective_mode = mode
-    else:
-        effective_mode = "auto"
-        effective_mode = _detect_mode(message)
+    # 已去掉就诊前/就诊后模式：完全按用户当次意图自动处理（后端图内自行判断）
+    effective_mode = "auto"
 
     # 凭据校验
     if not ctx.env.get("MIMO_API_KEY"):
@@ -163,6 +156,7 @@ async def handler(ctx):
                     "patient": patient,
                     "medications": existing_meds,
                     "mode": effective_mode,
+                    "profile_updates": {},
                 },
                 config={"configurable": {"thread_id": tid}},
                 stream_mode=["messages", "updates"],
@@ -230,6 +224,8 @@ async def handler(ctx):
                     t_first = time.perf_counter()
                 yield chunk
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             if ctx.request.signal.is_set():
                 pass
             elif got:
@@ -247,17 +243,15 @@ async def handler(ctx):
                 except Exception as e2:
                     yield ctx.utils.sse({"type": "error_message", "content": f"哎呀，小暖这边出了点小状况：{e2}"})
 
-        # 落记忆：只增量写入本轮明确提到的档案，避免每轮用旧快照覆盖新档案。
-        reply = "".join(collected).strip()
-        if reply and not ctx.request.signal.is_set():
+        # 落记忆：只写入本轮 AI 整理出的结构化信息（档案/用药/卡片），
+        # 不存对话原文——记忆面板用于回看整理结果，不当聊天记录。
+        if not ctx.request.signal.is_set():
             await _users.save_memory(
                 ctx,
                 username,
                 profile_updates=_safe_profile(profile_updates_seen),
                 medications=meds_seen,
                 cards=cards_seen,
-                heard=heard,
-                reply=reply,
             )
         _first_ms = int((t_first - t_req) * 1000) if t_first else -1
         print(f"[latency] first={_first_ms}ms total={int((time.perf_counter() - t_req) * 1000)}ms heard={heard[:12]!r}", flush=True)
@@ -265,30 +259,6 @@ async def handler(ctx):
         yield b"data: [DONE]\n\n"
 
     return ctx.utils.stream_sse(gen())
-
-
-def _detect_mode(text: str) -> str:
-    """仅按明确表达切换就诊流程；不确定时按普通聊天处理。"""
-    value = (text or "").lower()
-    post_cues = (
-        r"医生.{0,8}(说|让我|叫我|给我开|开了|开的|嘱咐)",
-        r"(刚|已经|刚刚)?看完(医生|病|门诊)",
-        r"(医嘱|处方|复诊|检查结果|化验结果)",
-        r"(药怎么吃|药一天吃几次|药什么时候吃|服药时间|吃药提醒)",
-        r"(我现在|我目前|我每天|我一直)(在)?(吃|服用).{0,10}(药|片|胶囊)",
-    )
-    pre_cues = (
-        r"(就诊前|看医生前|看病前|去医院前|准备(去|看|挂号))",
-        r"(打算|准备|明天要|一会儿要).{0,8}(看医生|看病|去医院|挂号|检查)",
-        r"(今天|明天|一会儿|下周).{0,6}(去医院|看医生|看病|门诊|挂号)",
-        r"怎么(跟|和)医生(说|讲|描述)|看医生(时|要).{0,6}(说|问)",
-        r"(预约门诊|挂号|要问医生|想问医生)",
-    )
-    if any(re.search(pattern, value) for pattern in post_cues):
-        return "post"
-    if any(re.search(pattern, value) for pattern in pre_cues):
-        return "pre"
-    return "chat"
 
 
 def _safe_profile(profile: dict) -> dict:

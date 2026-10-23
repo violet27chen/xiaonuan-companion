@@ -1,0 +1,19 @@
+[Unit]
+Description=Xiaonuan Doubao Realtime WebSocket Relay
+After=network.target xiaonuan-api.service
+
+[Service]
+Type=simple
+User=xiaonuan
+Group=xiaonuan
+WorkingDirectory=/opt/xiaonuan
+EnvironmentFile=/etc/xiaonuan/xiaonuan.env
+Environment=REALTIME_PORT=8081
+ExecStart=/usr/bin/node /opt/xiaonuan/server/realtime.mjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

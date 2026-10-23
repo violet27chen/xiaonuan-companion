@@ -14,7 +14,6 @@ export async function onRequest(context) {
       status: 426,
       headers: {
         Upgrade: "websocket",
-        "X-Xiaonuan-Voice-Handler": "2026-10-23-wsdiag-1",
       },
     });
   }
@@ -24,12 +23,13 @@ export async function onRequest(context) {
   return { websocket: createSession(context) };
 }
 
-function createSession(context) {
+export function createSession(context) {
   let upstream = null;
   let authenticated = false;
   let upstreamConnected = false;
   let closed = false;
   let eventSeq = 0;
+  let audioFrameCount = 0;
   let authTimer = null;
 
   const isOpen = (ws) => ws == null || ws.readyState == null || ws.readyState === 1;
@@ -217,6 +217,13 @@ function createSession(context) {
       if (!upstream || upstream.readyState !== WebSocket.OPEN) {
         sendClient(client, { type: "xiaonuan.error", message: "语音服务正在连接，请稍候" });
         return;
+      }
+      // 诊断用：确认浏览器是否真的把麦克风音频帧发上来了（每 50 帧记一次，避免刷屏）。
+      if (payload.type === "input_audio_buffer.append") {
+        audioFrameCount += 1;
+        if (audioFrameCount === 1 || audioFrameCount % 50 === 0) {
+          console.log(`[realtime audio] frames=${audioFrameCount} base64_len=${String(payload.audio || "").length}`);
+        }
       }
       sendUpstream(payload);
     },

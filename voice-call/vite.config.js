@@ -18,13 +18,13 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      // 后端 LangGraph agent（EdgeOne 海外免备案区）；开发期走代理规避跨域
+      // 本地独立后端；开发期走代理规避跨域
       "/companion": {
-        target: "https://xiaonuan.27c.site",
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
       },
       "/api/realtime": {
-        target: "wss://xiaonuan.27c.site",
+        target: "ws://127.0.0.1:8081",
         changeOrigin: true,
         ws: true,
       },
