@@ -4,6 +4,10 @@ import WebSocket from "ws";
 const UPSTREAM_URL = "wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue";
 const MAX_TOOL_TEXT = 6000;
 
+// EdgeOne Makers Cloud Functions 的 WebSocket 必须用「返回 { websocket: handler }」的形式。
+// 之前用的 new WebSocketPair() + return response 是 Cloudflare/边缘运行时写法，在 Makers 下
+// 握手会被边缘层拦截成 502（eo-pages-inner-status-intercept: true），浏览器 WS 永远建不起来，
+// 前端就显示「实时语音连接失败」。改成下面的对象返回形式即可。
 export async function onRequest(context) {
   if (context.request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
     return new Response("请使用 WebSocket 连接", { status: 426, headers: { Upgrade: "websocket" } });
@@ -11,21 +15,7 @@ export async function onRequest(context) {
   if (!context.env?.DOUBAO_REALTIME_API_KEY) {
     return new Response("实时语音服务未配置", { status: 503 });
   }
-  // EdgeOne Node Functions upgrades must return the Response from WebSocketPair.
-  // Returning a `{ websocket: handler }` object completes the HTTP handshake but
-  // does not keep the Node function's WebSocket event loop attached.
-  const { socket, response } = new WebSocketPair();
-  const session = createSession(context);
-  socket.addEventListener("message", (event) => {
-    const data = event.data;
-    const isBinary = typeof data !== "string"
-      && (data instanceof ArrayBuffer || ArrayBuffer.isView(data));
-    session.onmessage(socket, data, isBinary);
-  });
-  socket.addEventListener("close", () => session.onclose(socket));
-  socket.addEventListener("error", (event) => session.onerror(socket, event.error || event));
-  session.onopen(socket);
-  return response;
+  return { websocket: createSession(context) };
 }
 
 function createSession(context) {
@@ -36,15 +26,16 @@ function createSession(context) {
   let eventSeq = 0;
   let authTimer = null;
 
+  const isOpen = (ws) => ws == null || ws.readyState == null || ws.readyState === 1;
   const sendClient = (ws, payload) => {
-    if (ws.readyState === 1) ws.send(JSON.stringify(payload));
+    try { ws.send(JSON.stringify(payload)); } catch {}
   };
   const sendUpstream = (payload) => {
     if (upstream?.readyState === WebSocket.OPEN) upstream.send(JSON.stringify(payload));
   };
   const closeClientAfterFlush = (client, code, reason) => {
     setTimeout(() => {
-      if (client.readyState === 1) client.close(code, reason);
+      try { client.close?.(code, reason); } catch {}
     }, 120);
   };
   const shutdown = () => {
@@ -62,7 +53,7 @@ function createSession(context) {
       closeClientAfterFlush(client, 1008, "authentication required");
       return;
     }
-    const verifyUrl = companionUrl(context.request.url);
+    const verifyUrl = companionUrl(context.request.url, context.env);
     const verify = await fetch(verifyUrl, {
       method: "POST",
       headers: {
@@ -92,22 +83,21 @@ function createSession(context) {
       sendClient(client, { type: "auth_ok" });
     });
     upstream.on("message", (data, isBinary) => {
-      if (closed || client.readyState !== 1) return;
+      if (closed) return;
       if (isBinary) {
-        client.send(data);
+        try { client.send(data); } catch {}
         return;
       }
       const raw = data.toString();
       let event;
-      try { event = JSON.parse(raw); } catch { client.send(raw); return; }
+      try { event = JSON.parse(raw); } catch { try { client.send(raw); } catch {} return; }
       if (event.type === "response.function_call_arguments.done") {
         handleFunctionCalls(client, event, token).catch((error) => {
           console.error("[realtime tool] failed:", error?.message || error);
           sendClient(client, { type: "xiaonuan.error", message: "刚才没能保存这条信息，请再说一次。" });
         });
       }
-      // Forward transcript/text/audio events unchanged; API credentials stay on this server.
-      client.send(raw);
+      try { client.send(raw); } catch {}
     });
     upstream.on("error", (error) => {
       console.error("[realtime upstream] connection error:", error?.message || error);
@@ -139,7 +129,7 @@ function createSession(context) {
         results.push({ type: "message", role: "tool", call_id: item.call_id, content: [{ type: "input_text", text: "没有识别到需要整理的内容。" }] });
         continue;
       }
-      const response = await fetch(companionUrl(context.request.url), {
+      const response = await fetch(companionUrl(context.request.url, context.env), {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -149,7 +139,7 @@ function createSession(context) {
       });
       if (response.status === 401) {
         sendClient(client, { type: "auth_error", message: "登录已过期，请重新登录" });
-        client.close(1008, "authentication failed");
+        try { client.close?.(1008, "authentication failed"); } catch {}
         return;
       }
       if (!response.ok || !response.body) throw new Error(`companion request ${response.status}`);
@@ -191,13 +181,11 @@ function createSession(context) {
 
   return {
     onopen(client) {
-      // Send an initial frame immediately so the EdgeOne WebSocket adapter
-      // keeps the upgraded connection active while auth/provider setup runs.
       sendClient(client, { type: "server_ready" });
       authTimer = setTimeout(() => {
-        if (!authenticated && client.readyState === 1) {
+        if (!authenticated && isOpen(client)) {
           sendClient(client, { type: "auth_error", message: "连接超时，请重试" });
-          client.close(1008, "authentication timeout");
+          try { client.close?.(1008, "authentication timeout"); } catch {}
         }
       }, 10000);
     },
@@ -213,7 +201,7 @@ function createSession(context) {
         catch (error) {
           console.error("[realtime auth] failed:", error?.message || error);
           sendClient(client, { type: "auth_error", message: "语音服务暂时不可用，请稍后再试。" });
-          client.close(1011, "authentication service unavailable");
+          try { client.close?.(1011, "authentication service unavailable"); } catch {}
         }
         return;
       }
@@ -232,11 +220,29 @@ function createSession(context) {
       shutdown();
     },
   };
-
 }
 
-function companionUrl(requestUrl) {
-  const url = new URL(requestUrl);
+function companionUrl(requestUrl, env) {
+  // 1) 显式覆盖优先（可在 .env / 函数环境变量里设 COMPANION_URL，例如本地指向真实后端）。
+  const override = env?.COMPANION_URL || process.env.COMPANION_URL;
+  if (override) {
+    try {
+      const u = new URL(override);
+      u.pathname = "/companion";
+      u.search = "";
+      return u.toString();
+    } catch {}
+  }
+  let url;
+  try { url = new URL(requestUrl); } catch { return "/companion"; }
+  // 2) 本地开发：函数运行时的 request.url 是 Makers 内部端口（如 9001），
+  //    同域推导会被 dev server 代理到错误端口而 ECONNREFUSED（并曾导致 CLI 崩溃）。
+  //    Python 后端(agent-python) 实际在 127.0.0.1:9100，本地直接打它即可绕过坏代理。
+  const isLocal = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+  if (isLocal) {
+    return "http://127.0.0.1:9100/companion";
+  }
+  // 3) 生产：/companion 与 /api/realtime 同域名，同域推导即可。
   url.protocol = url.protocol === "http:" || url.protocol === "ws:" ? "http:" : "https:";
   url.pathname = "/companion";
   url.search = "";
