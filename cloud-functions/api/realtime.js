@@ -100,13 +100,16 @@ function createSession(context) {
       try { client.send(raw); } catch {}
     });
     upstream.on("error", (error) => {
-      console.error("[realtime upstream] connection error:", error?.message || error);
+      // 把豆包上游的真实错误码透传出来，便于区分「出网/DNS 问题」还是「密钥问题」。
+      const reason = error?.code || error?.message || "unknown";
+      console.error("[realtime upstream] connection error:", error?.message || error, "code=", error?.code);
       sendClient(client, upstreamConnected
-        ? { type: "xiaonuan.error", message: "语音服务暂时连接不上，请稍后再试。" }
-        : { type: "auth_error", message: "豆包语音连接失败，请检查实时语音服务配置或稍后重试。" });
+        ? { type: "xiaonuan.error", message: `语音服务暂时连接不上（${reason}），请稍后再试。` }
+        : { type: "auth_error", message: `豆包语音连接失败（${reason}），请检查实时语音服务配置或稍后重试。` });
       closeClientAfterFlush(client, 1011, "upstream connection failed");
     });
-    upstream.on("close", () => {
+    upstream.on("close", (code, reason) => {
+      console.error("[realtime upstream] closed code=", code, "reason=", reason?.toString?.() || reason);
       if (!closed) {
         sendClient(client, upstreamConnected
           ? { type: "upstream_closed" }
