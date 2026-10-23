@@ -41,7 +41,7 @@ jobs:
         with:
           tag_name: apk-v${{ github.run_number }}
           name: 陪诊小暖 APK v${{ github.run_number }}
-          body: 小暖 Android 应用 APK v1.6。打开后直接加载小暖正式网页版，使用与网页一致的界面和样式；Android WebView 提供麦克风、照片选择和用药提醒能力。下载 app-release.apk 安装即可；与已安装的同签名正式版可直接覆盖升级。首次安装需允许安装未知来源应用。
+          body: 小暖 Android 应用 APK v1.7。打开后直接加载小暖正式网页版，使用与网页一致的界面和样式；Android WebView 提供麦克风、照片选择、用药提醒，以及打开系统蓝牙/Wi-Fi 设置的硬件连接入口。自动泡药/泡茶设备控制仍需硬件协议支持。下载 app-release.apk 安装即可；与已安装的同签名正式版可直接覆盖升级。首次安装需允许安装未知来源应用。
           files: android/app/build/outputs/apk/release/app-release.apk
 
       - name: Upload artifact
