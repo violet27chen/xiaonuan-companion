@@ -178,6 +178,9 @@ function createSession(context) {
 
   return {
     onopen(client) {
+      // Send an initial frame immediately so the EdgeOne WebSocket adapter
+      // keeps the upgraded connection active while auth/provider setup runs.
+      sendClient(client, { type: "server_ready" });
       authTimer = setTimeout(() => {
         if (!authenticated && client.readyState === 1) {
           sendClient(client, { type: "auth_error", message: "连接超时，请重试" });
