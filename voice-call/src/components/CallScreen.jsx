@@ -1,51 +1,35 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Mic, Stethoscope, Headphones, Brain, X, Pill, Copy, Check, Share2, Sparkles, CaseSensitive, Gauge, RotateCcw } from "lucide-react";
 import Companion from "./Companion.jsx";
+import BrandMark from "./BrandMark.jsx";
 import MemoryPanel, { CardView } from "./MemoryPanel.jsx";
 import PrescriptionPhotoPanel from "./PrescriptionPhotoPanel.jsx";
-import VisitJourney from "./VisitJourney.jsx";
-import { PHASE_TEXT, useConversation } from "../hooks/useConversation.js";
-import { fetchMemory, getUser } from "../lib/auth.js";
+import { PHASE_TEXT, useConversation } from "../hooks/useRealtimeConversation.js";
+import { fetchMemory } from "../lib/auth.js";
 import { getSpeechSpeed, setAudioMuted, setSpeechSpeed } from "../lib/ai.js";
 import { syncMedicationReminders, normalizeReminderTimes, remindersEnabled } from "../lib/reminders.js";
 
 export default function CallScreen() {
-  const { phase, micOn, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, pauseMic, repeatLastReply, hasLastReply, mode, detectedMode, setMode } = useConversation();
+  const { phase, micOn, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, pauseMic, resumeListening, repeatLastReply, speakWelcome, hasLastReply, mode, detectedMode, setMode, voiceCommand } = useConversation();
   const [speakerOn, setSpeakerOn] = useState(true);
   const [activationOpen, setActivationOpen] = useState(true);
   const [memOpen, setMemOpen] = useState(false);
+  const [focusDispenser, setFocusDispenser] = useState(false);
   const [nextDose, setNextDose] = useState(null);
   const [copyDone, setCopyDone] = useState(false);
   const [shareStatus, setShareStatus] = useState("");
   const [photoOpen, setPhotoOpen] = useState(false);
+  const [photoAutoOpened, setPhotoAutoOpened] = useState(false);
+  const [voiceNotice, setVoiceNotice] = useState("");
+  const handledVoiceCommandRef = useRef(null);
   const [speechSpeed, setSpeedState] = useState(getSpeechSpeed);
   const [largeCaptions, setLargeCaptions] = useState(() => {
     try { return localStorage.getItem("xn_large_captions") === "1"; } catch { return false; }
-  });
-  const journeyKey = `xn_visit_step_${getUser() || "guest"}`;
-  const [journeyStep, setJourneyStep] = useState(() => {
-    try { return Math.max(0, Math.min(3, Number(localStorage.getItem(journeyKey)) || 0)); } catch { return 0; }
   });
   const phaseText = PHASE_TEXT[phase] || "";
 
   useEffect(() => setAudioMuted(!speakerOn), [speakerOn]);
   useEffect(() => setSpeechSpeed(speechSpeed), [speechSpeed]);
-
-  function setVisitStep(step) {
-    const next = Math.max(0, Math.min(3, step));
-    setJourneyStep(next);
-    try { localStorage.setItem(journeyKey, String(next)); } catch {}
-  }
-
-  useEffect(() => {
-    const latest = cards[cards.length - 1];
-    if (latest?.type === "pre" && journeyStep === 0) setVisitStep(1);
-    if (latest?.type === "post" && journeyStep < 2) setVisitStep(2);
-  }, [cards, journeyStep]);
-
-  useEffect(() => {
-    if (mode === "auto" && detectedMode === "post" && journeyStep < 2) setVisitStep(2);
-  }, [mode, detectedMode, journeyStep]);
 
   function toggleLargeCaptions() {
     setLargeCaptions((value) => {
@@ -55,20 +39,108 @@ export default function CallScreen() {
     });
   }
 
-  function openPhotoPanel() {
+  function openPhotoPanel(autoOpened = false) {
     pauseMic();
+    setPhotoAutoOpened(autoOpened);
     setPhotoOpen(true);
   }
 
-  async function copyVisitSummary(card) {
+  function closePhotoPanel() {
+    setPhotoOpen(false);
+    setPhotoAutoOpened(false);
+    activateMic();
+  }
+
+  function openMemoryPanel() {
+    pauseMic();
+    setMemOpen(true);
+  }
+
+  function closeMemoryPanel() {
+    setMemOpen(false);
+    setFocusDispenser(false);
+    activateMic();
+  }
+
+  function activateWithWelcome() {
+    const greeting = "你好，我是小暖，欢迎回来。今天想聊什么？";
+    setActivationOpen(false);
+    speakWelcome(greeting);
+  }
+
+  useEffect(() => {
+    if (!voiceCommand || voiceCommand.id === handledVoiceCommandRef.current) return;
+    handledVoiceCommandRef.current = voiceCommand.id;
+    if (photoOpen || memOpen) return;
+    const messages = {
+      photo: "我帮您打开拍照入口了。点一下相机区域就能拍药盒或医嘱。",
+      visit_post: "已经切到看诊后整理。想整理药盒或医嘱时，直接告诉我。",
+      visit_pre: "已经切到看诊前准备，可以告诉我哪里不舒服、想问医生什么。",
+      mode_auto: "已经切回自动识别模式。",
+      mode_post: "已经切到看诊后整理。",
+      mode_pre: "已经切到看诊前准备。",
+      mode_chat: "已经切到日常聊天。",
+      memory: "我帮您打开记录了。可以说要查看、修改或删除哪一项；删除前需要您确认。",
+      dispenser: "我打开了泡药和健康茶设备方案，可以查看准备情况。现在还没有接入实体设备。",
+      captions_large: "字幕已放大。",
+      captions_small: "字幕已恢复普通大小。",
+      speech_slow: "我会说慢一点。",
+      speech_normal: "我会用自然语速说话。",
+      repeat: "我再把刚才的话说一遍。",
+      share: cards.length ? "我帮您准备分享就诊信息。" : "还没有可分享的就诊摘要；可以先告诉我看诊情况。",
+      copy_summary: cards.at(-1)?.type === "pre" ? "我帮您复制就诊摘要。" : "还没有可复制的就诊前摘要；可以先告诉我看诊情况。",
+      speaker_off: "好的，我先关闭语音。",
+      speaker_on: "好的，我会用语音回答。",
+      mic_off: "好的，我先暂停聆听。要继续时请重新开启麦克风。",
+    };
+    setVoiceNotice(messages[voiceCommand.command] || "好的，我帮您切换好了。");
+    switch (voiceCommand.command) {
+      case "photo": openPhotoPanel(true); break;
+      case "visit_post": setMode("post"); break;
+      case "visit_pre": setMode("pre"); break;
+      case "mode_auto": setMode("auto"); break;
+      case "mode_post": setMode("post"); break;
+      case "mode_pre": setMode("pre"); break;
+      case "mode_chat": setMode("auto"); break;
+      case "memory": openMemoryPanel(); break;
+      case "dispenser": setFocusDispenser(true); openMemoryPanel(); break;
+      case "captions_large": setLargeCaptions(true); break;
+      case "captions_small": setLargeCaptions(false); break;
+      case "speech_slow": setSpeedState("slow"); break;
+      case "speech_normal": setSpeedState("normal"); break;
+      case "repeat": repeatLastReply(voiceCommand.repeatText, true); break;
+      case "share": if (cards.length) shareCard(cards[cards.length - 1], true); break;
+      case "copy_summary": if (cards.at(-1)?.type === "pre") copyVisitSummary(cards[cards.length - 1], true); break;
+      case "speaker_off": setSpeakerOn(false); break;
+      case "speaker_on": setSpeakerOn(true); break;
+      case "mic_off": pauseMic(); break;
+      default: break;
+    }
+    resumeListening();
+  }, [voiceCommand, phase, photoOpen, memOpen]);
+
+  async function copyVisitSummary(card, voiceTriggered = false) {
     const s = card?.visit_summary || {};
     const labels = { symptoms: "主要不适", duration: "持续时间", history: "既往情况", current_meds: "当前用药", questions: "想问医生", missing: "就诊时可补充" };
     const lines = Object.entries(labels).flatMap(([key, label]) => {
       const value = Array.isArray(s[key]) ? s[key].filter(Boolean).join("；") : String(s[key] || "");
       return value ? [`${label}：${value}`] : [];
     });
+    const text = ["就诊前信息整理（请核对）", ...lines, "仅整理对话信息，不是诊断结论。"].join("\n");
+    if (voiceTriggered && window.XiaonuanNative?.copyText) {
+      try {
+        window.XiaonuanNative.copyText(text);
+        setCopyDone(true);
+        setTimeout(() => setCopyDone(false), 1800);
+      } catch { setVoiceNotice("复制失败，请点就诊卡片上的“复制摘要”按钮。"); }
+      return;
+    }
+    if (voiceTriggered) {
+      setVoiceNotice("浏览器需要一次点击才能复制，请点就诊卡片上的“复制”按钮。");
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(["就诊前信息整理（请核对）", ...lines, "仅整理对话信息，不是诊断结论。"].join("\n"));
+      await navigator.clipboard.writeText(text);
       setCopyDone(true);
       setTimeout(() => setCopyDone(false), 1800);
     } catch {
@@ -76,7 +148,7 @@ export default function CallScreen() {
     }
   }
 
-  async function shareCard(card) {
+  async function shareCard(card, voiceTriggered = false) {
     const summary = card?.visit_summary || {};
     const labels = { symptoms: "主要不适", duration: "持续时间", history: "既往情况", current_meds: "当前用药", questions: "想问医生", missing: "就诊时可补充" };
     const lines = [];
@@ -101,6 +173,21 @@ export default function CallScreen() {
       lines.push("请以医生实际交代为准。");
     }
     const text = lines.join("\n");
+    if (voiceTriggered) {
+      const nativeShare = window.XiaonuanNative?.shareText;
+      if (nativeShare) {
+        try {
+          nativeShare("小暖整理的就医信息", text);
+          setShareStatus("已打开系统分享");
+          setTimeout(() => setShareStatus(""), 2200);
+        } catch {
+          setVoiceNotice("分享没有打开，请点就诊卡片上的“分享”按钮。 ");
+        }
+      } else {
+        setVoiceNotice("浏览器需要一次点击才能分享，请点就诊卡片上的“分享”按钮。 ");
+      }
+      return;
+    }
     try {
       if (navigator.share) {
         await navigator.share({ title: "小暖整理的就医信息", text });
@@ -160,7 +247,7 @@ export default function CallScreen() {
             <p className="mt-0.5 text-[11px] tracking-wide text-[#89a0a0]">把就医信息说清楚、记明白</p>
           </div>
         </div>
-        <button type="button" onClick={() => setMemOpen(true)}
+        <button type="button" onClick={openMemoryPanel}
           className="flex h-11 items-center gap-2 rounded-2xl border border-white/90 bg-white/80 px-3.5 text-[13px] font-medium text-[#547477] shadow-sm transition hover:bg-white active:scale-[.98]">
           <Brain size={17} className="text-[#318a89]" /> 我的记录
         </button>
@@ -182,7 +269,7 @@ export default function CallScreen() {
         <button type="button" onClick={toggleLargeCaptions} aria-pressed={largeCaptions} className={`flex h-10 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium ${largeCaptions ? "bg-[#287f80] text-white" : "bg-white/80 text-[#547477]"}`}>
           <CaseSensitive size={16} />{largeCaptions ? "字幕已放大" : "字幕放大"}
         </button>
-        <button type="button" onClick={() => setSpeedState((speed) => speed === "slow" ? "normal" : "slow")} aria-pressed={speechSpeed === "slow"} className="flex h-10 items-center gap-1.5 rounded-xl bg-white/80 px-3 text-[12px] font-medium text-[#547477]">
+        <button type="button" onClick={() => setSpeedState((speed) => speed === "slow" ? "normal" : "slow")} aria-pressed={speechSpeed === "slow"} className={`flex h-10 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium ${speechSpeed === "slow" ? "bg-[#287f80] text-white" : "bg-white/80 text-[#547477]"}`}>
           <Gauge size={16} />{speechSpeed === "slow" ? "慢速朗读" : "自然语速"}
         </button>
         {hasLastReply && <button type="button" onClick={repeatLastReply} className="flex h-10 items-center gap-1.5 rounded-xl bg-white/80 px-3 text-[12px] font-medium text-[#547477]">
@@ -190,16 +277,8 @@ export default function CallScreen() {
         </button>}
       </div>
 
-      <VisitJourney
-        step={journeyStep}
-        onPrepare={() => setMode("pre")}
-        onDoctorDone={() => { setVisitStep(2); setMode("post"); openPhotoPanel(); }}
-        onPhoto={openPhotoPanel}
-        onReset={() => { setVisitStep(0); setMode("auto"); }}
-      />
-
       {nextDose && (
-        <button type="button" onClick={() => setMemOpen(true)} className="relative z-10 mx-auto mt-3 flex items-center gap-2 rounded-full border border-[#f4dfc8] bg-[#fff8ef]/90 px-4 py-2 text-[12px] text-[#956543]">
+        <button type="button" onClick={openMemoryPanel} className="relative z-10 mx-auto mt-3 flex items-center gap-2 rounded-full border border-[#f4dfc8] bg-[#fff8ef]/90 px-4 py-2 text-[12px] text-[#956543]">
           <Pill size={14} />
           {nextDose.times.length ? <>{nextDose.reminderEnabled ? "提醒已开启" : "已设置时间，点此开启提醒"}：<b className="font-semibold text-[#85552f]">{nextDose.times.join("、")}</b></> : nextDose.time ? <>医生提到的服药时间：<b className="font-semibold text-[#85552f]">{nextDose.time}</b></> : <>已保存 {nextDose.meds.length} 条用药记录 · 设置提醒</>}
         </button>
@@ -225,6 +304,7 @@ export default function CallScreen() {
               </div>
             )}
             {micError && <p className="mt-2 text-[13px] text-[#bd6854]">{micError}</p>}
+            {voiceNotice && <p role="status" className="mt-2 text-[13px] text-[#287f80]">{voiceNotice}</p>}
             {demoMode && <span className="mt-2 inline-flex rounded-full bg-[#fff2df] px-3 py-1 text-[11px] font-medium text-[#a07142]">演示模式</span>}
           </div>
 
@@ -273,19 +353,19 @@ export default function CallScreen() {
         <p className="mt-2 text-center text-[11px] text-[#93a7a8]">{micOn ? "正在聆听 · 再点一下可结束" : "点击话筒开始语音对话"}</p>
       </footer>
 
-      {memOpen && <MemoryPanel onClose={() => setMemOpen(false)} />}
-      {photoOpen && <PrescriptionPhotoPanel onClose={() => setPhotoOpen(false)} onSaved={() => { setVisitStep(3); setPhotoOpen(false); }} />}
+      {memOpen && <MemoryPanel onClose={closeMemoryPanel} focusDispenser={focusDispenser} />}
+      {photoOpen && <PrescriptionPhotoPanel autoOpened={photoAutoOpened} onClose={closePhotoPanel} onSaved={closePhotoPanel} />}
 
       {activationOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#19383f]/35 px-6 backdrop-blur-[5px]"
           role="dialog" aria-modal="true" aria-labelledby="activation-title">
           <div className="w-full max-w-[340px] rounded-[28px] border border-white/80 bg-[#fffdfa] px-6 pb-6 pt-7 text-center shadow-[0_24px_80px_rgba(23,62,66,.24)]">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[20px] bg-[#e7f3ef] text-[#287f80]">
-              <Mic size={25} strokeWidth={1.8} />
+            <div className="mx-auto flex h-14 w-14 items-center justify-center overflow-hidden rounded-[20px] bg-[#e7f3ef]">
+              <BrandMark className="h-12 w-12" />
             </div>
             <h2 id="activation-title" className="mt-4 text-[20px] font-semibold tracking-tight text-[#19383f]">点击屏幕，激活小暖</h2>
-            <p className="mt-2 text-[13px] leading-6 text-[#789092]">开启麦克风后就能直接说话，小暖会认真听你讲。</p>
-            <button type="button" onClick={() => { setActivationOpen(false); activateMic(); }}
+            <p className="mt-2 text-[13px] leading-6 text-[#789092]">开启麦克风后直接说就行，例如“帮我看药盒”“放大字幕”或“打开我的记录”，小暖会帮您打开相应功能。</p>
+            <button type="button" onClick={activateWithWelcome}
               className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#287f80] text-[14px] font-semibold text-white shadow-[0_8px_20px_rgba(40,127,128,.2)] transition hover:bg-[#216f72] active:scale-[.98]">
               <Mic size={17} />点击激活并开启麦克风
             </button>

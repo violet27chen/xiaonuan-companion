@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { X, LogOut, Pencil, Check, Plus, Trash2, AlertTriangle, LoaderCircle, Bell, BellOff } from "lucide-react";
 import { fetchMemory, saveMemory, clearMemory, deleteMemoryItem, logout, getUser } from "../lib/auth.js";
 import { enableMedicationReminders, disableMedicationReminders, remindersEnabled, normalizeReminderTimes, syncMedicationReminders } from "../lib/reminders.js";
+import SmartDispenserPanel from "./SmartDispenserPanel.jsx";
 
 /* 小暖保存的记忆：档案 / 用药提醒 / 生成的卡片 / 最近的对话 */
 export function CardView({ card }) {
@@ -236,7 +237,7 @@ function MedsEditor({ list, onChange }) {
   );
 }
 
-export default function MemoryPanel({ onClose }) {
+export default function MemoryPanel({ onClose, focusDispenser = false }) {
   const [mem, setMem] = useState(null);
   const [err, setErr] = useState("");
   const [editing, setEditing] = useState(false);
@@ -400,6 +401,7 @@ export default function MemoryPanel({ onClose }) {
                   <p className="mt-2 text-[12px] text-[#a07142]">先点“编辑”，为用药记录填写准确钟点，例如 08:00、20:00。</p>
                 )}
               </section>
+              <SmartDispenserPanel medications={mem.medications || []} autoExpand={focusDispenser} />
               <Section title="用药记录" empty="还没保存过用药记录，告诉小暖就能记下来">
                 {(mem.medications || []).map((m, i) => (
                   <DeletableRow key={i} label={`用药记录：${m.name || "未命名"}`} busy={deletingItems.has(`medications-${i}`)} onDelete={() => removeItem(`medications-${i}`, { category: "medications", index: i, expected: m })}>

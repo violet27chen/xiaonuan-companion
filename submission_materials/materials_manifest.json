@@ -1,0 +1,29 @@
+{
+  "files": [
+    {
+      "name": "01-报名表-陪诊小暖-待团队签字.docx",
+      "bytes": 17945,
+      "sha256": "e9ac37dc23f03b3d0a7ed90598216ec28c19b0e5889948fef02d4efd9742d489"
+    },
+    {
+      "name": "02-陪诊小暖-作品说明与操作指引.docx",
+      "bytes": 41541,
+      "sha256": "913f0b84b1d815ca475868c749ce9eb84bd4d20c49aa135c388119ee5b34941f"
+    },
+    {
+      "name": "03-陪诊小暖-验证报告待补实测.docx",
+      "bytes": 41142,
+      "sha256": "10bbaa2c6f876cb6f042cf9f449af74eaf309d273716074460b90870de142b78"
+    },
+    {
+      "name": "04-参赛材料-你需要完成的事项与提交步骤.docx",
+      "bytes": 42026,
+      "sha256": "44015dfa2157f93b5b619b09deb4e24ccb0a370dca18abfdd1540cd6da003ad1"
+    }
+  ],
+  "form_description_characters": 271,
+  "form_changed_package_parts": [
+    "word/document.xml"
+  ],
+  "folder": "C:\\Users\\viole\\Documents\\agent\\submission_materials"
+}

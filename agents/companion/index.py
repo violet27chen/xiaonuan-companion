@@ -1,4 +1,4 @@
-# 陪诊小暖 入口：SSE 流式（文本回复 + 结构化卡片 + 语音）+ 用户系统
+# 陪诊小暖业务入口：文本处理、结构化卡片与用户系统；实时语音由 Node WebSocket 入口承接
 import json
 import re
 import time
@@ -8,7 +8,6 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
 from . import _users
 from ._graph import build_graph
-from ._speech import speech_available, synthesize, synthesize_stream, transcribe
 from ._vision import parse_medication_photo
 
 DEMO_PATIENT = {"称呼": "叔叔阿姨"}
@@ -24,7 +23,7 @@ async def handler(ctx):
 
     # ---- 能力探测：前端据此决定是否降级演示模式（无需登录）----
     if action == "caps":
-        return {"asr": speech_available(ctx.env), "tts": speech_available(ctx.env)}
+        return {"realtime": bool(ctx.env.get("DOUBAO_REALTIME_API_KEY")), "agent": bool(ctx.env.get("MIMO_API_KEY"))}
 
     # ---- 注册 / 登录 / 退出 ----
     if action == "register":
@@ -49,6 +48,10 @@ async def handler(ctx):
     username = await _users.username_of(ctx, token)
     if not username:
         return {"error": "请先登录"}, 401
+
+    # WebSocket 语音代理只需验证登录态，不返回个人档案或记忆数据。
+    if action == "auth_check":
+        return {"ok": True}
 
     # ---- 记忆面板：查看小暖保存的记忆 ----
     if action == "memory":
@@ -106,48 +109,13 @@ async def handler(ctx):
             return {"error": str(e)}, 422
         return result
 
-    # ---- 单独 TTS：把一段文字念出来（逐句预取合成用）----
-    if action == "tts":
-        text = (body.get("text") or "").strip()
-        if not text:
-            return {"error": "text is required"}, 400
-        if body.get("stream"):
-            # 流式：SSE 逐 chunk 转发音频片段（mp3），前端 MSE 边收边播，首音 ~0.7s
-            async def tts_gen():
-                _t = time.perf_counter()
-                n = 0
-                async for chunk_data in synthesize_stream(ctx.env, text):
-                    n += len(chunk_data)
-                    yield ctx.utils.sse({"type": "tts_chunk", "audio": chunk_data})
-                print(f"[latency] tts_stream={int((time.perf_counter() - _t) * 1000)}ms chars={len(text)} b64={n}", flush=True)
-            return ctx.utils.stream_sse(tts_gen())
-        _t_tts = time.perf_counter()
-        audio = await synthesize(ctx.env, text, body.get("speed") or "slow")
-        print(f"[latency] tts={int((time.perf_counter() - _t_tts) * 1000)}ms chars={len(text)}", flush=True)
-        if not audio:
-            return {"error": "tts_unavailable"}, 503
-        return {"audio": audio}
-
     message = (body.get("message") or "").strip()
-    audio_b64 = body.get("audio") or ""
-    mime = body.get("mime") or "audio/webm"
     mode = (body.get("mode") or "auto").strip()  # auto 自动识别；pre/post 为人工指定
 
-    # ---- 语音输入：录音转写（失败降级提示）----
-    from_audio = False
-    asr_ms = 0
-    if not message and audio_b64:
-        from_audio = True
-        _t_asr = time.perf_counter()
-        message = await transcribe(ctx.env, audio_b64, mime)
-        asr_ms = int((time.perf_counter() - _t_asr) * 1000)
-        if not message:
-            return {"error": "语音没听清，麻烦再讲一遍"}, 422
-
     if not message:
-        return {"error": "请对着话筒说话"}, 400
+        return {"error": "请提供需要整理的文字"}, 400
 
-    heard = message                      # asr 回显用原文（含称呼，老人看着自然）
+    heard = message
     cleaned = _WAKE_RE.sub("", message).strip()
     if cleaned:
         message = cleaned                # 传给模型的指令去掉唤醒称呼
@@ -162,8 +130,8 @@ async def handler(ctx):
         effective_mode = _detect_mode(message)
 
     # 凭据校验
-    if not ctx.env.get("AI_GATEWAY_API_KEY"):
-        return {"error": "模型网关未配置（AI_GATEWAY_API_KEY）"}, 500
+    if not ctx.env.get("MIMO_API_KEY"):
+        return {"error": "模型服务未配置（MIMO_API_KEY）"}, 500
 
     # 档案和用药记录从当前登录账号的服务端记忆读取，避免共享设备上的本地数据串号。
     user_memory = await _users.load_memory(ctx, username)
@@ -177,9 +145,6 @@ async def handler(ctx):
     async def gen():
         t_req = time.perf_counter()
         yield ctx.utils.sse({"type": "mode", "mode": effective_mode})
-        if from_audio:
-            yield ctx.utils.sse({"type": "asr", "content": heard})
-
         collected = []   # 本轮 AI 回复原文（记忆用）
         cards_seen = []  # 本轮生成的卡片
         meds_seen = None
@@ -295,7 +260,7 @@ async def handler(ctx):
                 reply=reply,
             )
         _first_ms = int((t_first - t_req) * 1000) if t_first else -1
-        print(f"[latency] asr={asr_ms}ms first={_first_ms}ms total={int((time.perf_counter() - t_req) * 1000)}ms heard={heard[:12]!r}", flush=True)
+        print(f"[latency] first={_first_ms}ms total={int((time.perf_counter() - t_req) * 1000)}ms heard={heard[:12]!r}", flush=True)
         yield ctx.utils.sse({"type": "ping", "ts": int(time.time() * 1000)})
         yield b"data: [DONE]\n\n"
 

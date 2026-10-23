@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { ArrowRight, ShieldCheck, Stethoscope } from "lucide-react";
+import { ArrowRight, ShieldCheck } from "lucide-react";
 import Companion from "./Companion.jsx";
+import BrandMark from "./BrandMark.jsx";
 import { login, register, setAuth } from "../lib/auth.js";
 
 /* Login gate for the private health notes and voice companion. */
@@ -53,19 +54,16 @@ export default function AuthPanel({ onAuth }) {
         </section>
 
         <section className="mx-auto w-full max-w-[440px] rounded-[30px] border border-white/80 bg-white/90 p-6 shadow-[0_24px_80px_rgba(39,83,84,0.12)] backdrop-blur md:p-9">
-          <div className="mb-7 flex items-center gap-3 md:hidden">
+          <div className="mb-7 flex items-center gap-3">
             <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-[#edf6f4]">
-              <Companion audioLevel={0} talking={false} listening={false} style={{ width: 76 }} />
+              <BrandMark className="h-12 w-12" />
             </div>
             <div>
               <div className="text-[20px] font-semibold tracking-tight">小暖</div>
               <div className="mt-0.5 text-[13px] text-[#72898a]">语音就医信息助手</div>
             </div>
           </div>
-          <div className="mb-6 hidden md:block">
-            <div className="mb-2 flex h-11 w-11 items-center justify-center rounded-2xl bg-[#e7f3f1] text-[#318a89]">
-              <Stethoscope size={21} />
-            </div>
+          <div className="mb-6">
             <p className="text-[13px] font-medium text-[#769092]">欢迎使用小暖</p>
             <h2 className="mt-1 text-[27px] font-semibold tracking-tight">{mode === "login" ? "欢迎回来" : "创建一个账号"}</h2>
           </div>

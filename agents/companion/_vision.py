@@ -10,10 +10,10 @@ MAX_IMAGE_BYTES = 6 * 1024 * 1024
 ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
 _TIME_RE = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
 
-PROMPT = """请阅读这张处方、出院记录或医生交代单，只整理图上明确可读的信息，不做诊断、不提出治疗建议。
+PROMPT = """请阅读这张药盒、药品包装、处方、出院记录或医生交代单，只整理图上明确可读的信息，不做诊断、不提出治疗建议。
 严格按 JSON 输出，不要 Markdown，格式：
 {"document_type":"处方/出院记录/其他/无法判断","medications":[{"name":"","dosage":"","frequency":"","timing":"","reminder_times":[],"evidence":"原文短句","uncertain_fields":[]}],"warnings":[],"follow_up":{"department":"","time_hint":"","bring":[]},"unreadable":[]}
-规则：药名、剂量、频次、服用时机必须照图转录，绝不推算或补全；“每日一次”不能换算成钟点，只有图上明确写了具体时刻才填写 reminder_times（HH:MM）；看不清的字段留空并把字段名放进 uncertain_fields；不要把药品规格误认为每次剂量；图中没有明确写出的信息一律留空。最多提取20种药。"""
+规则：药盒/包装照片可以识别包装上明确印出的药名、规格和文字，并把可核对的包装原文写入 evidence；包装规格不等于每次剂量，dosage、frequency、timing 只能填写图中明确写出的实际服用方法，不能从药品名称或常见用法推断；“每日一次”不能换算成钟点，只有图上明确写了具体时刻才填写 reminder_times（HH:MM）；看不清的字段留空并把字段名放进 uncertain_fields；图中没有明确写出的信息一律留空。最多提取20种药。"""
 
 
 def _short(value, limit=180):

@@ -23,6 +23,11 @@ export default defineConfig({
         target: "https://xiaonuan.27c.site",
         changeOrigin: true,
       },
+      "/api/realtime": {
+        target: "wss://xiaonuan.27c.site",
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
 });

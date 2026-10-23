@@ -1,29 +1,29 @@
-# LLM 工厂：按 (base_url, temperature) 缓存 ChatOpenAI 实例
+# LLM 工厂：健康档案和用药整理使用 MiMo OpenAI 兼容接口
 from langchain_openai import ChatOpenAI
 
-DEFAULT_MODEL = "@makers/deepseek-v4-flash"
+DEFAULT_MODEL = "mimo-v2.6-flash"
 _model_cache: dict = {}
 
 
 def get_model(env: dict, temperature: float = 0.3) -> ChatOpenAI:
-    api_key = env.get("AI_GATEWAY_API_KEY")
-    base_url = env.get("AI_GATEWAY_BASE_URL")
+    api_key = env.get("MIMO_API_KEY")
+    base_url = (env.get("MIMO_BASE_URL") or "https://api.xiaomimimo.com/v1").rstrip("/")
     if not api_key or not base_url:
-        raise RuntimeError("缺少 AI_GATEWAY_API_KEY / AI_GATEWAY_BASE_URL 环境变量")
-    key = (base_url, temperature)
+        raise RuntimeError("缺少 MIMO_API_KEY 环境变量")
+    model_name = env.get("MIMO_LLM_MODEL") or DEFAULT_MODEL
+    key = (base_url, model_name, temperature)
     if key not in _model_cache:
         common = dict(
-            model=env.get("AI_GATEWAY_MODEL") or DEFAULT_MODEL,
+            model=model_name,
             api_key=api_key,
             base_url=base_url,
             temperature=temperature,
-            timeout=120,
-            # 流式：回复随生成随出，首句立刻可以合成语音，不用等整段生成完
+            timeout=45,
             streaming=True,
         )
         try:
-            # 关闭推理思考：首字延迟约减半（语音对话等不起）；老版本不支持该字段时退回默认
-            _model_cache[key] = ChatOpenAI(**common, model_kwargs={"reasoning_effort": "none"})
+            # 关闭长思考，保持对话和结构化提取响应速度。
+            _model_cache[key] = ChatOpenAI(**common, model_kwargs={"thinking": {"type": "disabled"}})
         except Exception:
             _model_cache[key] = ChatOpenAI(**common)
     return _model_cache[key]

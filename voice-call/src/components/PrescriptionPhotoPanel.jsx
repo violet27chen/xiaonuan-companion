@@ -11,7 +11,7 @@ function timesFromText(value) {
   return [...new Set(String(value || "").split(/[，,、\s]+/).map((v) => v.trim()).filter((v) => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v)))].slice(0, 4);
 }
 
-export default function PrescriptionPhotoPanel({ onClose, onSaved }) {
+export default function PrescriptionPhotoPanel({ onClose, onSaved, autoOpened = false }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState("");
   const [allowSend, setAllowSend] = useState(false);
@@ -111,8 +111,8 @@ export default function PrescriptionPhotoPanel({ onClose, onSaved }) {
       <section className="flex max-h-[94dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-t-[28px] bg-[#f9fbfb] shadow-2xl sm:rounded-[28px]">
         <header className="flex items-center justify-between border-b border-[#dce8e7] px-5 py-4" style={{ paddingTop: "max(16px, env(safe-area-inset-top))" }}>
           <div>
-            <h2 id="photo-title" className="text-[18px] font-semibold text-[#19383f]">拍照整理医嘱</h2>
-            <p className="mt-1 text-[13px] text-[#769092]">识别后由您逐项核对，再决定保存什么</p>
+            <h2 id="photo-title" className="text-[18px] font-semibold text-[#19383f]">拍张照片给小暖看</h2>
+            <p className="mt-1 text-[13px] text-[#769092]">药盒、处方或医嘱都可以拍</p>
           </div>
           <button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#688184]" aria-label="关闭">
             <X size={20} />
@@ -123,8 +123,9 @@ export default function PrescriptionPhotoPanel({ onClose, onSaved }) {
           {!result && (
             <>
               <p className="rounded-2xl border border-[#f1dfc8] bg-[#fff8ef] p-3.5 text-[14px] leading-6 text-[#805f43]">
-                拍清楚药名和用法。照片会发送给 MiMo 图片识别服务；建议先遮住姓名、身份证号、就诊卡号等个人信息。小暖不会保存原照片。
+                拍清楚药盒、处方或医嘱上的文字，小暖会帮您整理看得清的信息。照片会发送给 MiMo 图片识别服务；建议先遮住姓名、身份证号、就诊卡号等个人信息，识别后请对照原件核对。药盒上的规格不代表每次服用剂量，小暖不会据此判断怎么吃药，也不会保存原照片。
               </p>
+              {autoOpened && <p className="rounded-xl bg-[#edf6f4] px-3.5 py-3 text-[14px] leading-5 text-[#287f80]">您刚才提到了药品，我已经帮您打开拍照入口。点下面的按钮，对准药盒或医嘱拍一张；也可以从相册选照片。</p>}
               {preview ? (
                 <div className="relative overflow-hidden rounded-2xl border border-[#dce8e7] bg-white">
                   <img src={preview} alt="待识别的医嘱照片" className="max-h-[34vh] w-full object-contain" />
@@ -135,7 +136,7 @@ export default function PrescriptionPhotoPanel({ onClose, onSaved }) {
               ) : (
                 <label className="flex min-h-44 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[#b9d8d3] bg-white text-center text-[#287f80]">
                   <Camera size={32} strokeWidth={1.7} />
-                  <span className="text-[16px] font-medium">拍照或从相册选择</span>
+                  <span className="text-[16px] font-medium">{autoOpened ? "点这里打开相机或相册" : "拍照或从相册选择"}</span>
                   <span className="text-[13px] text-[#769092]">支持 JPG、PNG、WebP</span>
                   <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="sr-only" onChange={(event) => chooseFile(event.target.files?.[0])} />
                 </label>
