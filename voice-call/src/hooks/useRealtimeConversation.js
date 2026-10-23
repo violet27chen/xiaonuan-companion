@@ -23,12 +23,16 @@ function voiceCommandFor(text) {
   if (/就诊前|看医生前|准备就诊/.test(t)) return "";
   if (/日常聊天|随便聊聊/.test(t)) return "";
   if (/我的记录|打开记录|查看记录|看看记忆|打开记忆|用药记录|提醒我|吃药提醒|服药提醒|设置.*提醒|设.*提醒|清空记忆|删除记忆|修改档案/.test(t)) return "memory";
-  if (/(关闭|关掉|取消|恢复|不要|不用).{0,5}(字幕放大|大字幕|放大字幕)/.test(t) || /字幕小一点|缩小字幕|字体小一点|恢复普通字幕/.test(t)) return "captions_small";
-  if (/字幕.*(大|小)|放大字幕|字幕太小|字大一点|字体大|看不清字|开启大字幕|打开大字幕/.test(t)) return /字幕.*(小|太小)|缩小字幕|字体小/.test(t) ? "captions_small" : "captions_large";
-  if (/(关闭|关掉|取消|不要|不用).{0,2}字幕/.test(t)) return "captions_off";
-  if (/(打开|开启|显示|看看).{0,2}字幕/.test(t)) return "captions_on";
-  if (/(关闭|关掉|取消|恢复|不要|不用).{0,5}(慢速|慢一点|慢点说|慢速朗读)/.test(t) || /自然语速|正常语速|说快点|语速快|恢复正常朗读/.test(t)) return "speech_normal";
-  if (/慢点说|说慢点|语速慢|听慢一点|慢速朗读|把语速调慢|说慢一点/.test(t)) return "speech_slow";
+  if (/(关闭|关掉|取消|恢复|不要|不用|不需要|无需).{0,5}(字幕放大|大字幕|放大字幕)/.test(t) || /字幕小一点|缩小字幕|字体小一点|恢复普通字幕/.test(t)) return "captions_small";
+  if (/字幕.*(大|小)|放大字幕|字幕太大|字大一点|字体大|看不清字|开启大字幕|打开大字幕/.test(t)) return /字幕.*(小|太小)|缩小字幕|字体小/.test(t) ? "captions_small" : "captions_large";
+  // 字幕开关：把「字幕打开」「我要看字幕」「有字幕吗」「不需要字幕」等说法都认出来
+  if (/(关闭|关掉|取消|不要|不用|不需要|无需).{0,3}字幕/.test(t) || /字幕(关了|关掉|取消|关一下)/.test(t)) return "captions_off";
+  if (/(打开|开启|显示|看看|想看|我要|来点|需要).{0,3}字幕/.test(t) || /字幕打开|字幕功能|有字幕吗|上字幕/.test(t)) return "captions_on";
+  // 语速：「太快了」→ 调慢；「太慢了」→ 恢复；也认「讲慢点」「正常速度」「恢复原速」等
+  if (/(太慢|说慢了|讲慢了|念慢了|读慢了)/.test(t)) return "speech_normal";
+  if (/(太快|说快了|讲快了|念快了|读快了)/.test(t)) return "speech_slow";
+  if (/(关闭|关掉|取消|恢复|不要|不用).{0,5}(慢速|慢一点|慢点说|慢速朗读)/.test(t) || /自然语速|正常语速|正常速度|原来的速度|恢复语速|原速|说快点|语速快|恢复正常朗读/.test(t)) return "speech_normal";
+  if (/慢点说|说慢点|说慢一点|讲慢点|念慢点|读慢点|语速慢|听慢一点|慢速朗读|把语速调慢|慢一点|慢一些|放慢一点|说慢些/.test(t)) return "speech_slow";
   if (/再说一遍|再说一次|重复刚才|再听一次|没听清|重播刚才|再读一遍/.test(t)) return "repeat";
   if (/分享给家人|分享给医生|分享摘要|把摘要分享|发给家人|发给医生/.test(t)) return "share";
   if (/复制摘要|复制就诊信息|复制就诊摘要/.test(t)) return "copy_summary";

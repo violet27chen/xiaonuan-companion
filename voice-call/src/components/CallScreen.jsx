@@ -261,23 +261,6 @@ export default function CallScreen() {
         </button>
       </header>
 
-      <div className="relative z-10 mx-auto mt-2 flex w-[calc(100%-40px)] max-w-[420px] items-center justify-center gap-2">
-        <button type="button" onClick={toggleCaptions} aria-pressed={captionsOn} className={`flex h-10 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium ${captionsOn ? "bg-[#287f80] text-white" : "bg-white/80 text-[#547477]"}`}>
-          <CaseSensitive size={16} />{captionsOn ? "字幕已开" : "字幕"}
-        </button>
-        {captionsOn && (
-          <button type="button" onClick={toggleLargeCaptions} aria-pressed={largeCaptions} className={`flex h-10 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium ${largeCaptions ? "bg-[#287f80] text-white" : "bg-white/80 text-[#547477]"}`}>
-            <CaseSensitive size={16} />{largeCaptions ? "字幕已放大" : "字幕放大"}
-          </button>
-        )}
-        <button type="button" onClick={() => setSpeedState((speed) => speed === "slow" ? "normal" : "slow")} aria-pressed={speechSpeed === "slow"} className={`flex h-10 items-center gap-1.5 rounded-xl px-3 text-[12px] font-medium ${speechSpeed === "slow" ? "bg-[#287f80] text-white" : "bg-white/80 text-[#547477]"}`}>
-          <Gauge size={16} />{speechSpeed === "slow" ? "慢速朗读" : "自然语速"}
-        </button>
-        {hasLastReply && <button type="button" onClick={repeatLastReply} className="flex h-10 items-center gap-1.5 rounded-xl bg-white/80 px-3 text-[12px] font-medium text-[#547477]">
-          <RotateCcw size={15} />再听一次
-        </button>}
-      </div>
-
       {nextDose && (
         <button type="button" onClick={openMemoryPanel} className="relative z-10 mx-auto mt-3 flex items-center gap-2 rounded-full border border-[#f4dfc8] bg-[#fff8ef]/90 px-4 py-2 text-[12px] text-[#956543]">
           <Pill size={14} />
@@ -287,10 +270,10 @@ export default function CallScreen() {
 
       <main className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-5 pb-4 pt-1">
         <div className="relative flex w-full max-w-[420px] flex-col items-center">
-          <div className="relative flex h-[min(42vh,330px)] w-full items-center justify-center">
-            <Companion audioLevel={level} talking={phase === "speak"} thinking={phase === "think"} listening={phase === "listen"} style={{ width: "min(75vw, 310px)" }} />
-            <div className="absolute right-[12%] top-[14%] flex h-9 w-9 items-center justify-center rounded-2xl border border-white bg-white/90 text-[#e6a66c] shadow-sm">
-              <Sparkles size={17} />
+          <div className="relative flex h-[min(30vh,232px)] w-full items-center justify-center">
+            <Companion audioLevel={level} talking={phase === "speak"} thinking={phase === "think"} listening={phase === "listen"} style={{ width: "min(52vw, 200px)" }} />
+            <div className="absolute right-[16%] top-[12%] flex h-8 w-8 items-center justify-center rounded-2xl border border-white bg-white/90 text-[#e6a66c] shadow-sm">
+              <Sparkles size={15} />
             </div>
           </div>
 
@@ -307,6 +290,24 @@ export default function CallScreen() {
             {micError && <p className="mt-2 text-[13px] text-[#bd6854]">{micError}</p>}
             {voiceNotice && <p role="status" className="mt-2 text-[13px] text-[#287f80]">{voiceNotice}</p>}
             {demoMode && <span className="mt-2 inline-flex rounded-full bg-[#fff2df] px-3 py-1 text-[11px] font-medium text-[#a07142]">演示模式</span>}
+          </div>
+
+          {/* 设置工具栏：放在人物下方，和顶部导航栏彻底分开；按钮紧凑 + 可换行，窄屏也不重叠 */}
+          <div data-testid="settings-toolbar" className="mt-1 flex w-full flex-wrap items-center justify-center gap-1.5">
+            <button type="button" onClick={toggleCaptions} aria-pressed={captionsOn} className={`flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] font-medium transition active:scale-[.97] ${captionsOn ? "bg-[#287f80] text-white shadow-[0_4px_12px_rgba(40,127,128,.18)]" : "border border-white/90 bg-white/80 text-[#547477]"}`}>
+              <CaseSensitive size={13} />{captionsOn ? "字幕已开" : "字幕"}
+            </button>
+            {captionsOn && (
+              <button type="button" onClick={toggleLargeCaptions} aria-pressed={largeCaptions} className={`flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] font-medium transition active:scale-[.97] ${largeCaptions ? "bg-[#287f80] text-white" : "border border-white/90 bg-white/80 text-[#547477]"}`}>
+                <CaseSensitive size={13} />{largeCaptions ? "已放大" : "放大"}
+              </button>
+            )}
+            <button type="button" onClick={() => setSpeedState((speed) => speed === "slow" ? "normal" : "slow")} aria-pressed={speechSpeed === "slow"} className={`flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] font-medium transition active:scale-[.97] ${speechSpeed === "slow" ? "bg-[#287f80] text-white shadow-[0_4px_12px_rgba(40,127,128,.18)]" : "border border-white/90 bg-white/80 text-[#547477]"}`}>
+              <Gauge size={13} />{speechSpeed === "slow" ? "慢速" : "正常"}
+            </button>
+            {hasLastReply && <button type="button" onClick={repeatLastReply} className="flex h-8 items-center gap-1 rounded-lg border border-white/90 bg-white/80 px-2 text-[11px] font-medium text-[#547477] transition active:scale-[.97]">
+              <RotateCcw size={12} />再听
+            </button>}
           </div>
 
           {cards.length > 0 && (
