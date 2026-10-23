@@ -18,6 +18,7 @@ export async function onRequest(context) {
 function createSession(context) {
   let upstream = null;
   let authenticated = false;
+  let upstreamConnected = false;
   let closed = false;
   let eventSeq = 0;
   let authTimer = null;
@@ -27,6 +28,11 @@ function createSession(context) {
   };
   const sendUpstream = (payload) => {
     if (upstream?.readyState === WebSocket.OPEN) upstream.send(JSON.stringify(payload));
+  };
+  const closeClientAfterFlush = (client, code, reason) => {
+    setTimeout(() => {
+      if (client.readyState === 1) client.close(code, reason);
+    }, 120);
   };
   const shutdown = () => {
     closed = true;
@@ -40,7 +46,7 @@ function createSession(context) {
     const token = typeof payload.token === "string" ? payload.token : "";
     if (!token || token.length > 512) {
       sendClient(client, { type: "auth_error", message: "请先登录后再使用语音" });
-      client.close(1008, "authentication required");
+      closeClientAfterFlush(client, 1008, "authentication required");
       return;
     }
     const verifyUrl = companionUrl(context.request.url);
@@ -52,18 +58,26 @@ function createSession(context) {
       },
       body: JSON.stringify({ action: "auth_check", token }),
     });
-    if (!verify.ok) {
+    const verifyBody = await verify.json().catch(() => null);
+    const verifyError = verifyBody?.error || (Array.isArray(verifyBody) && verifyBody[0]?.error);
+    if (!verify.ok || verifyError || verifyBody?.ok === false) {
       sendClient(client, { type: "auth_error", message: "登录已过期，请重新登录" });
-      client.close(1008, "authentication failed");
+      closeClientAfterFlush(client, 1008, "authentication failed");
       return;
     }
     authenticated = true;
     upstream = new WebSocket(UPSTREAM_URL, {
-      headers: { "X-Api-Key": context.env.DOUBAO_REALTIME_API_KEY },
+      headers: {
+        "X-Api-Key": context.env.DOUBAO_REALTIME_API_KEY,
+        "X-Api-Connect-Id": randomUUID(),
+      },
       handshakeTimeout: 12000,
       perMessageDeflate: false,
     });
-    upstream.on("open", () => sendClient(client, { type: "auth_ok" }));
+    upstream.on("open", () => {
+      upstreamConnected = true;
+      sendClient(client, { type: "auth_ok" });
+    });
     upstream.on("message", (data, isBinary) => {
       if (closed || client.readyState !== 1) return;
       if (isBinary) {
@@ -84,12 +98,17 @@ function createSession(context) {
     });
     upstream.on("error", (error) => {
       console.error("[realtime upstream] connection error:", error?.message || error);
-      sendClient(client, { type: "xiaonuan.error", message: "语音服务暂时连接不上，请稍后再试。" });
+      sendClient(client, upstreamConnected
+        ? { type: "xiaonuan.error", message: "语音服务暂时连接不上，请稍后再试。" }
+        : { type: "auth_error", message: "豆包语音连接失败，请检查实时语音服务配置或稍后重试。" });
+      closeClientAfterFlush(client, 1011, "upstream connection failed");
     });
     upstream.on("close", () => {
       if (!closed) {
-        sendClient(client, { type: "upstream_closed" });
-        client.close(1011, "voice provider disconnected");
+        sendClient(client, upstreamConnected
+          ? { type: "upstream_closed" }
+          : { type: "auth_error", message: "豆包语音未能建立连接，请稍后重试。" });
+        closeClientAfterFlush(client, 1011, "voice provider disconnected");
       }
     });
   }
