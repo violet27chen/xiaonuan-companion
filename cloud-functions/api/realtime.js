@@ -4,20 +4,18 @@ import WebSocket from "ws";
 const UPSTREAM_URL = "wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue";
 const MAX_TOOL_TEXT = 6000;
 
-export async function onRequestGet(context) {
+export async function onRequest(context) {
   if (context.request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
     return new Response("请使用 WebSocket 连接", { status: 426, headers: { Upgrade: "websocket" } });
   }
   if (!context.env?.DOUBAO_REALTIME_API_KEY) {
     return new Response("实时语音服务未配置", { status: 503 });
   }
-  // EdgeOne Cloud Functions requires the standard WebSocketPair upgrade response.
-  const { socket, response } = new WebSocketPair();
-  createSession(context, socket);
-  return response;
+  // EdgeOne Node Functions uses its WebSocket handler adapter for upgrades.
+  return { websocket: createSession(context) };
 }
 
-function createSession(context, client) {
+function createSession(context) {
   let upstream = null;
   let authenticated = false;
   let closed = false;
@@ -159,7 +157,7 @@ function createSession(context, client) {
     }
   }
 
-  const handlers = {
+  return {
     onopen(client) {
       authTimer = setTimeout(() => {
         if (!authenticated && client.readyState === 1) {
@@ -200,13 +198,6 @@ function createSession(context, client) {
     },
   };
 
-  client.addEventListener("open", () => handlers.onopen(client));
-  client.addEventListener("message", (event) => {
-    const isBinary = typeof event.data !== "string";
-    handlers.onmessage(client, event.data, isBinary);
-  });
-  client.addEventListener("close", () => handlers.onclose(client));
-  client.addEventListener("error", (event) => handlers.onerror(client, event.error || event));
 }
 
 function companionUrl(requestUrl) {
