@@ -391,7 +391,18 @@ export function useConversation() {
       streamRef.current?.getTracks().forEach((track) => { track.enabled = false; });
       setMicOn(false);
       setPhase("idle");
-      setMicError(error?.message || "麦克风没打开，请检查权限后再试");
+      const errorName = error?.name || "";
+      const errorMessage = error?.message || "";
+      if (["NotAllowedError", "PermissionDeniedError", "SecurityError"].includes(errorName)
+          || /permission denied|denied permission/i.test(errorMessage)) {
+        setMicError("麦克风权限被拒绝。请在浏览器地址栏旁的网站设置中允许麦克风，再点话筒重试；安卓 App 请到系统设置中允许小暖使用麦克风。");
+      } else if (errorName === "NotFoundError" || errorName === "DevicesNotFoundError") {
+        setMicError("没有找到可用的麦克风，请检查设备后重试。");
+      } else if (errorName === "NotReadableError" || errorName === "TrackStartError") {
+        setMicError("麦克风正被其他应用占用，请关闭占用麦克风的应用后重试。");
+      } else {
+        setMicError(errorMessage || "麦克风没打开，请检查权限后再试");
+      }
       try { socketRef.current?.close(); } catch {}
     } finally {
       startingRef.current = false;

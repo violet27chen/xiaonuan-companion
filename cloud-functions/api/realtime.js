@@ -11,8 +11,21 @@ export async function onRequest(context) {
   if (!context.env?.DOUBAO_REALTIME_API_KEY) {
     return new Response("实时语音服务未配置", { status: 503 });
   }
-  // EdgeOne Node Functions uses its WebSocket handler adapter for upgrades.
-  return { websocket: createSession(context) };
+  // EdgeOne Node Functions upgrades must return the Response from WebSocketPair.
+  // Returning a `{ websocket: handler }` object completes the HTTP handshake but
+  // does not keep the Node function's WebSocket event loop attached.
+  const { socket, response } = new WebSocketPair();
+  const session = createSession(context);
+  socket.addEventListener("message", (event) => {
+    const data = event.data;
+    const isBinary = typeof data !== "string"
+      && (data instanceof ArrayBuffer || ArrayBuffer.isView(data));
+    session.onmessage(socket, data, isBinary);
+  });
+  socket.addEventListener("close", () => session.onclose(socket));
+  socket.addEventListener("error", (event) => session.onerror(socket, event.error || event));
+  session.onopen(socket);
+  return response;
 }
 
 function createSession(context) {
@@ -81,7 +94,7 @@ function createSession(context) {
     upstream.on("message", (data, isBinary) => {
       if (closed || client.readyState !== 1) return;
       if (isBinary) {
-        client.send(data, { binary: true });
+        client.send(data);
         return;
       }
       const raw = data.toString();

@@ -30,18 +30,13 @@ public class MainActivity extends Activity {
     private WebView wv;
     private XiaonuanBridge bridge;
     private ValueCallback<Uri[]> filePathCallback;
+    private PermissionRequest pendingMicRequest;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{
-                    Manifest.permission.RECORD_AUDIO,
-                    Manifest.permission.MODIFY_AUDIO_SETTINGS}, REQ_MIC);
-        }
 
         wv = new WebView(this);
         bridge = new XiaonuanBridge(this);
@@ -84,12 +79,18 @@ public class MainActivity extends Activity {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
+                        Uri origin = request.getOrigin();
+                        if (origin == null || !"https".equals(origin.getScheme())
+                                || !"xiaonuan.27c.site".equals(origin.getHost())) {
+                            request.deny();
+                            return;
+                        }
                         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
                                 == PackageManager.PERMISSION_GRANTED) {
-                            request.grant(request.getResources());
+                            request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
                         } else {
+                            pendingMicRequest = request;
                             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
-                            request.deny();
                         }
                     }
                 });
@@ -103,6 +104,16 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_MIC && pendingMicRequest != null) {
+            PermissionRequest request = pendingMicRequest;
+            pendingMicRequest = null;
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED
+                    && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+            } else {
+                request.deny();
+            }
+        }
         if (requestCode == REQ_NOTIFICATIONS && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             bridge.requestExactAlarmAccessIfNeeded();
@@ -134,6 +145,10 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (pendingMicRequest != null) {
+            pendingMicRequest.deny();
+            pendingMicRequest = null;
+        }
         if (filePathCallback != null) {
             filePathCallback.onReceiveValue(null);
             filePathCallback = null;
