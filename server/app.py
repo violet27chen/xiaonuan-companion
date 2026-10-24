@@ -1,4 +1,4 @@
-"""Standalone FastAPI adapter for the EdgeOne companion agent."""
+"""Standalone FastAPI adapter for the Xiaonuan companion agent."""
 from __future__ import annotations
 
 import asyncio

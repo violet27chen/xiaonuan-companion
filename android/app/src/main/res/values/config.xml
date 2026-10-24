@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 陪诊小暖 App 加载的后端站点。
+         切换服务器（如本地 Docker 部署地址、迁移后的新域名）只需改这里，无需改动 Java 代码重新编译。
+         注意：WebView 内语音对话依赖 HTTPS；若指向本地纯 http 地址，麦克风录音将不可用。 -->
+    <string name="app_site_url">https://ai.27c.site</string>
+    <string name="app_site_host">ai.27c.site</string>
+</resources>

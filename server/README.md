@@ -1,9 +1,9 @@
 # Standalone server deployment
 
-This installation serves the complete web app and its services on the origin at `http://38.76.215.51`. EdgeOne CDN terminates public HTTPS at `https://xiaonuan.27c.site` and forwards requests to this origin:
+This installation serves the complete web app and its services on the origin at `http://43.165.130.174`. EdgeOne CDN terminates public HTTPS at `https://ai.27c.site` and forwards requests to this origin:
 
 - Nginx serves the built React app and proxies `/companion` to FastAPI and `/api/realtime` to Node.js.
-- FastAPI runs the existing companion agent with SQLite user sessions, health records, medication entries, cards, recent chats, and LangGraph checkpoints.
+- FastAPI runs the existing companion agent with PostgreSQL user sessions, health records, medication entries, cards, recent chats, and LangGraph checkpoints.
 - Node.js hosts the Doubao full-duplex WebSocket relay. `COMPANION_URL` points it to the local FastAPI service.
 - The production secrets are stored only in `/etc/xiaonuan/xiaonuan.env`.
 
@@ -22,9 +22,21 @@ This installation serves the complete web app and its services on the origin at 
    cp -a /opt/xiaonuan/voice-call/dist/. /var/www/xiaonuan/
    ```
 
-5. Open TCP port 80 and configure the CDN origin protocol as HTTP, port 80, origin IP `38.76.215.51`, and Host header `xiaonuan.27c.site`.
+5. Open TCP port 80 and configure the CDN origin protocol as HTTP, port 80, origin IP `43.165.130.174`, and Host header `ai.27c.site`.
 6. Install `nginx.conf` as the Nginx site, validate it, and reload Nginx. Install both systemd units from this directory and enable them.
 
 ## Important migration note
 
-The previous Makers KV data is not included in the Git repository. User accounts and health records stored there do not automatically appear in this server's SQLite database. Export/import them from the old service before asking existing users to switch. If no export route is available, users will need to register again; do not remove or shut down the old deployment until that is decided.
+User accounts, health records, medication entries, cards, and recent chats are stored in the server's PostgreSQL database (see `server/app.py` `PostgresKV`). There is no separate KV store. A fresh deployment (including the Docker setup below) starts with an **empty database** — early users simply register again; no data migration is required.
+
+## Docker 一键部署（推荐用于迁移 / 本地启动）
+
+整套服务（PostgreSQL + 后端 API + 语音中继 + Web 前端）可用 Docker Compose 一条命令拉起，便于以后换机器迁移或本地演示：
+
+```sh
+cp .env.example .env        # 填入 MIMO_API_KEY / DOUBAO_REALTIME_API_KEY
+docker compose up -d --build
+# 浏览器打开 http://localhost:8080
+```
+
+相关文件：`docker-compose.yml`、`server/Dockerfile.api`、`server/Dockerfile.relay`、`server/Dockerfile.web`、`server/nginx.docker.conf`、`.dockerignore`。后端依赖版本锁定在 `server/requirements.txt`（与线上 43.165.130.174 环境一致）。

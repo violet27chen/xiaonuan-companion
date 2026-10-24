@@ -50,23 +50,31 @@ function friendlyError(msg, status) {
   return m || `服务开小差了(${status})`;
 }
 
-async function call(action, payload = {}) {
+async function call(action, payload = {}, opts = {}) {
+  const timeoutMs = opts.timeout ?? 55000;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   let r;
   try {
     r = await fetch(API, {
       method: "POST",
       headers: { "Content-Type": "application/json", "makers-conversation-id": getCid() },
       body: JSON.stringify({ action, ...payload }),
+      signal: ctrl.signal,
     });
-  } catch {
+  } catch (e) {
+    clearTimeout(timer);
+    if (e && e.name === "AbortError") throw new Error("服务响应有点慢，请稍等几秒再试");
     throw new Error("网络不稳定，再试一次");
   }
+  clearTimeout(timer);
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
     if (r.status === 401) {
       notifyAuthLost();
       throw new Error("登录过期了，请重新登录");
     }
+    if (r.status === 524) throw new Error("服务有点忙，请稍等几秒再试");
     throw new Error(friendlyError(j.error, r.status));
   }
   return j;

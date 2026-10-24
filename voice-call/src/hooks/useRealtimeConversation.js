@@ -30,8 +30,10 @@ function voiceCommandFor(text, opts = {}) {
   if (/就诊前|看医生前|准备就诊/.test(t)) return "";
   if (/日常聊天|随便聊聊/.test(t)) return "";
   if (/我的记录|打开记录|查看记录|看看记忆|打开记忆|用药记录|提醒我|吃药提醒|服药提醒|设置.*提醒|设.*提醒|清空记忆|删除记忆|修改档案/.test(t)) return "memory";
-  if (/(关闭|关掉|取消|恢复|不要|不用|不需要|无需).{0,5}(字幕放大|大字幕|放大字幕)/.test(t) || /字幕小一点|缩小字幕|字体小一点|恢复普通字幕/.test(t)) return "captions_small";
-  if (/字幕.*(大|小)|放大字幕|字幕太大|字大一点|字体大|看不清字|开启大字幕|打开大字幕/.test(t)) return /字幕.*(小|太小)|缩小字幕|字体小/.test(t) ? "captions_small" : "captions_large";
+  if (/(关闭|关掉|取消|恢复|不要|不用|不需要|无需).{0,5}(字幕放大|大字幕|放大字幕)/.test(t) || /字幕小一点|字幕缩小|缩小字幕|字体小一点|字体小|恢复普通字幕|字小一点|字小些/.test(t)) return "captions_small";
+  // 放大字幕：覆盖「字幕大 / 放大字幕 / 字大一点 / 放大一点字 / 把字放大 / 放大字体」等多种口语，
+  // 避免“放大一点字”被当成“放大屏幕”丢给模型（模型没有缩放屏幕的能力，会回“无法放大屏幕”）。
+  if (/字幕.*(大|小)|放大字幕|字幕太大|字大一点|字大些|字体大|字体大一点|看不清字|开启大字幕|打开大字幕|放大.{0,4}字|把字放大|字.{0,2}放大|字再大|大一点字|字放大点/.test(t)) return /字幕.*(小|太小)|缩小字幕|字体小|字小一点|字小些|字缩小/.test(t) ? "captions_small" : "captions_large";
   // 字幕开关：把「字幕打开」「我要看字幕」「有字幕吗」「不需要字幕」等说法都认出来
   if (/(关闭|关掉|取消|不要|不用|不需要|无需).{0,3}字幕/.test(t) || /字幕(关了|关掉|取消|关一下)/.test(t)) return "captions_off";
   if (/(打开|开启|显示|看看|想看|我要|来点|需要).{0,3}字幕/.test(t) || /字幕打开|字幕功能|有字幕吗|上字幕/.test(t)) return "captions_on";
@@ -53,13 +55,48 @@ function eventId() {
   return `evt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function buildInstructions() {
-  return [
+// 拉取用户当前用药/档案上下文，注入语音会话，让端到端模型“懂事”。
+async function fetchVoiceContext(token) {
+  try {
+    const r = await fetch("/companion", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "voice_context", token }),
+    });
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    return j && typeof j === "object" ? j : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildInstructions(context) {
+  const base = [
     "你是老人身边的语音陪伴员小暖，像亲切的孙女自然交流。一般用一两句简短口语回答，不要机械客套，不主动把闲聊引向疾病。",
     "你能直接处理普通聊天。用户明确说出自己的长期健康档案、过敏情况、在用药物或医生医嘱时，应调用 xiaonuan_companion 自动整理记录；用户要求整理就诊信息、复诊安排或生成就诊卡片时也调用。把用户原话传入 message，不要猜测缺失信息，也不要记录提问、假设或第三方信息。",
     "不得诊断、开药、改变医生医嘱。胸痛、呼吸困难、意识不清、大出血等紧急情况，立即建议拨打120或去急诊。没有明确请求不要调用工具。",
     "说话清楚、语句简短，重要的话稍微放慢一点，方便老人听清。",
-  ].join("\n");
+  ];
+  const meds = context && Array.isArray(context.medications) ? context.medications : [];
+  if (meds.length) {
+    const lines = meds.map((m) => {
+      const times = (m.reminder_times || []).join("、") || "未设时间";
+      const status = (m.reminder_times || []).map((t) => {
+        const s = m.today_status && m.today_status[t];
+        const label = s === "taken" ? "已服" : s === "skipped" ? "跳过" : "还没吃";
+        return `${t}（${label}）`;
+      }).join("，");
+      return `- ${m.name}${m.dosage ? `（${m.dosage}）` : ""}：每天${times}；今天${status || "无安排"}`;
+    });
+    let ctxText = "【用户当前用药】\n" + lines.join("\n");
+    const profile = (context && context.profile) || {};
+    const name = profile["称呼"] || profile["姓名"];
+    if (name) ctxText += `\n用户称呼：${name}。`;
+    ctxText += "\n当用户说“我吃过了 / 这顿吃了 / 不吃了 / 等会儿这顿不吃”时，请调用 xiaonuan_mark_taken 记录（药名和钟点从用户原话或上面的【用户当前用药】里取；不确定具体钟点就按“刚提醒的那一顿”）。问“我早上吃药了吗”这类，按上面的今天状态如实回答。普通闲聊不要调用工具。";
+    base.push(ctxText);
+  }
+  return base.join("\n");
 }
 
 // 语速走豆包 TTS 的 audio.output.speed（-50=0.5x, 0=原速, 100=2x），比提示词可靠。
@@ -134,6 +171,8 @@ export function useConversation() {
   const [cards, setCards] = useState([]);
   const [demoMode, setDemoMode] = useState(false);
   const [micError, setMicError] = useState("");
+  const [reminderPrompt, setReminderPrompt] = useState(null);
+  const reminderPromptRef = useRef(null);
   const ctxRef = useRef(null);
   const streamRef = useRef(null);
   const sourceRef = useRef(null);
@@ -268,34 +307,70 @@ export function useConversation() {
           clearTimeout(timeout);
           socketReadyRef.current = true;
           resolve(); // 必须 resolve，否则 startMic 会一直卡在「正在连接」
-          const instructions = buildInstructions();
-          ws.send(JSON.stringify({
-            type: "session.create",
-            event_id: eventId(),
-            session: {
-              id: crypto.randomUUID(),
-              model: "1.2.6.1",
-              instructions,
-              audio: {
-                input: { format: { type: "pcm", rate: 16000 } },
-                output: outputAudioConfig(),
-              },
-              tools: [{
-                type: "function",
-                name: "xiaonuan_companion",
-                description: "当用户明确要求整理就诊信息、管理档案或用药记录时调用。原样传递用户刚说的话，由陪诊小暖的业务模型负责安全整理和保存。普通闲聊不要调用。",
-                parameters: {
-                  type: "object",
-                  properties: {
-                    message: { type: "string", description: "用户的原话" },
-                    mode: { type: "string", enum: ["auto", "pre", "post", "chat"] },
-                  },
-                  required: ["message", "mode"],
+          // 拉取用户用药/档案上下文注入会话（失败则退化为无上下文，不影响通话）
+          fetchVoiceContext(getToken()).then((context) => {
+            const instructions = buildInstructions(context);
+            ws.send(JSON.stringify({
+              type: "session.create",
+              event_id: eventId(),
+              session: {
+                id: crypto.randomUUID(),
+                model: "1.2.6.1",
+                instructions,
+                audio: {
+                  input: { format: { type: "pcm", rate: 16000 } },
+                  output: outputAudioConfig(),
                 },
-              }],
-            },
-            extension: { asr: { extra: {} }, tts: { extra: {} }, dialog: { extra: { enable_loudness_norm: true, enable_music: false } } },
-          }));
+                tools: [
+                  {
+                    type: "function",
+                    name: "xiaonuan_companion",
+                    description: "当用户明确要求整理就诊信息、管理档案或用药记录时调用。原样传递用户刚说的话，由陪诊小暖的业务模型负责安全整理和保存。普通闲聊不要调用。",
+                    parameters: {
+                      type: "object",
+                      properties: {
+                        message: { type: "string", description: "用户的原话" },
+                        mode: { type: "string", enum: ["auto", "pre", "post", "chat"] },
+                      },
+                      required: ["message", "mode"],
+                    },
+                  },
+                  {
+                    type: "function",
+                    name: "xiaonuan_mark_taken",
+                    description: "当用户说把某一顿药吃了/吃过了/不吃了/这顿跳过时调用，记录该药该钟点的服药状态。药名和钟点取自用户原话或【用户当前用药】列表；不确定具体钟点就按用户刚确认的“这一顿”处理。",
+                    parameters: {
+                      type: "object",
+                      properties: {
+                        med_name: { type: "string", description: "药名，如“氨氯地平”" },
+                        dose_time: { type: "string", description: "HH:MM 钟点，如“08:00”" },
+                        status: { type: "string", enum: ["taken", "skipped"], description: "taken=已服，skipped=这顿不吃" },
+                      },
+                      required: ["med_name", "dose_time", "status"],
+                    },
+                  },
+                ],
+              },
+              extension: { asr: { extra: {} }, tts: { extra: {} }, dialog: { extra: { enable_loudness_norm: true, enable_music: false } } },
+            }));
+          }).catch(() => {
+            // 兜底：上下文拉取异常也要把会话建起来
+            ws.send(JSON.stringify({
+              type: "session.create",
+              event_id: eventId(),
+              session: {
+                id: crypto.randomUUID(),
+                model: "1.2.6.1",
+                instructions: buildInstructions(null),
+                audio: {
+                  input: { format: { type: "pcm", rate: 16000 } },
+                  output: outputAudioConfig(),
+                },
+                tools: [{ type: "function", name: "xiaonuan_companion", description: "整理就诊/档案/用药信息。", parameters: { type: "object", properties: { message: { type: "string", description: "用户的原话" }, mode: { type: "string", enum: ["auto", "pre", "post", "chat"] } }, required: ["message", "mode"] } }],
+              },
+              extension: { asr: { extra: {} }, tts: { extra: {} }, dialog: { extra: { enable_loudness_norm: true, enable_music: false } } },
+            }));
+          });
           return;
         }
         if (event.type === "auth_error") {
@@ -638,12 +713,12 @@ export function useConversation() {
     if (!text) return;
     if (!socketReadyRef.current) { setMicError("请先开启麦克风，再让小暖重复刚才的话。"); return; }
     interruptTurn();
-    requestSpeechText(text, true);
+    playTts(text);
   }
 
   function speakWelcome(text) {
     if (!text) return;
-    startMic().then(() => requestSpeechText(text, true));
+    startMic().then(() => playTts(text)).catch(() => playTts(text));
   }
 
   function pauseMic() {
@@ -734,18 +809,99 @@ export function useConversation() {
     };
   }, []);
 
+  // 到点吃药：收到提醒事件后，若语音已开就主动念提醒；否则弹出“让小暖说”横幅
+  useEffect(() => {
+    const onReminder = (event) => {
+      const d = (event && event.detail) || {};
+      if (!d || !d.name) return;
+      reminderPromptRef.current = d;
+      if (micOnRef.current) {
+        speakReminderText(d);
+      } else {
+        setReminderPrompt(d);
+      }
+    };
+    window.addEventListener("xn-medication-reminder", onReminder);
+    return () => window.removeEventListener("xn-medication-reminder", onReminder);
+  }, []);
+
+  function reminderText(d) {
+    const t = d.time || "";
+    return `到吃药时间了：${d.name}${d.dosage ? `，${d.dosage}` : ""}${t ? `，${t}这顿` : ""}。请按医生交代服用。`;
+  }
+
+  function speakReminderText(d) {
+    const text = reminderText(d);
+    playTts(text);
+  }
+
+  function speakReminder() {
+    const d = reminderPromptRef.current;
+    if (!d) return;
+    setReminderPrompt(null);
+    (async () => {
+      if (!micOnRef.current) {
+        try { await startMic(); } catch { return; }
+      }
+      speakReminderText(d);
+    })();
+  }
+
   function dismissCard(index) {
     setCards((previous) => previous.filter((_, i) => i !== index));
   }
 
-  /** 让小暖念一段指定的话（拍照复述、操作提示用）；麦克风没开就只更新界面提示 */
-  function speak(text) {
-    if (!text) return;
-    if (!socketReadyRef.current) {
-      setMicError("请先点话筒开启语音，小暖才能说话。");
+  /**
+   * 用豆包语音「音频生成 HTTP」合成并播放一段固定文本，不占用实时全双工会话。
+   * 用于欢迎语、用药提醒、拍照复述等系统单向播报。失败自动退回实时语音播报。
+   */
+  async function playTts(text) {
+    if (!text || !text.trim()) return;
+    const plain = String(text).trim();
+    const ctx = ctxRef.current || primeAudioContext();
+    if (!ctx) {
+      if (socketReadyRef.current) requestSpeechText(plain);
       return;
     }
-    requestSpeechText(text);
+    try {
+      if (ctx.state === "suspended") { try { await ctx.resume(); } catch {} }
+      const resp = await fetch("/tts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: plain }),
+      });
+      if (!resp.ok) throw new Error(`tts ${resp.status}`);
+      const buf = await resp.arrayBuffer();
+      const audioBuf = await ctx.decodeAudioData(buf.slice(0));
+      stopPlayback();
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuf;
+      source.connect(ctx.destination);
+      source.onended = () => {
+        activeSourcesRef.current.delete(source);
+        if (phaseRef.current === "speak") setPhase(micOnRef.current ? "listen" : "idle");
+        setSubtitle(null);
+        setLevel(0);
+      };
+      activeSourcesRef.current.add(source);
+      source.start();
+      setPhase("speak");
+      setLevel(0.4);
+      if (captionsOnRef.current) {
+        outputTextRef.current = plain;
+        textGenRef.current = responseGenRef.current;
+        setSubtitle({ who: "小暖", text: plain });
+      }
+    } catch (e) {
+      if (socketReadyRef.current) requestSpeechText(plain);
+      else console.warn("[tts] 播放失败且无实时通道:", e?.message || e);
+    }
+  }
+
+  /** 让小暖念一段指定的话（拍照复述、操作提示用）：走 HTTP TTS，无需占用实时会话 */
+  function speak(text) {
+    if (!text) return;
+    playTts(text);
   }
 
   /** 标记"正在等用户确认拍照记录的时间"：控制"对/不对"是否当确认词 */
@@ -758,5 +914,6 @@ export function useConversation() {
     toggleMic, activateMic, pauseMic, resumeListening, repeatLastReply,
     speakWelcome, hasLastReply: !!lastReplyRef.current, voiceCommand,
     speak, markPhotoConfirmAwaiting,
+    reminderPrompt, speakReminder,
   };
 }

@@ -1,6 +1,0 @@
-{
-  "agents": {
-    "framework": "langgraph",
-    "timeout": 1800
-  }
-}

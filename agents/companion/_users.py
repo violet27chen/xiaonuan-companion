@@ -1,5 +1,5 @@
 # 用户系统：用户名 + 密码（PBKDF2 加盐哈希）、会话令牌、按用户隔离的记忆存储
-# 纯标准库实现；持久化用 ctx.kv（EdgeOne 每路由 KV store，生产环境 blob 持久化）
+# 纯标准库实现；持久化用运行时注入的 ctx.kv（生产环境为 PostgreSQL，见 server/app.py 的 PostgresKV）
 import hashlib
 import re
 import secrets
@@ -219,6 +219,10 @@ def _sanitize_meds(raw) -> list:
                 value for value in (m.get("reminder_times") or [])
                 if isinstance(value, str) and re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value)
             ][:4],
+            "taken_log": [
+                e for e in (m.get("taken_log") or [])
+                if isinstance(e, dict) and re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", str(e.get("time") or ""))
+            ][:60],
         })
     return out
 

@@ -10,7 +10,7 @@ AI companion for elderly doctor visits — voice-first web app and standalone se
 
 ## 独立服务器部署
 
-`server/` contains the standalone FastAPI companion API, SQLite user and memory storage, persistent LangGraph checkpoints, and Node.js Doubao WebSocket relay. The site is served by Nginx; runtime secrets belong in `/etc/xiaonuan/xiaonuan.env`, never in Git or frontend assets. Deployment notes are in `server/README.md`.
+`server/` contains the standalone FastAPI companion API, PostgreSQL user and memory storage, persistent LangGraph checkpoints, and Node.js Doubao WebSocket relay. The site is served by Nginx; runtime secrets belong in `/etc/xiaonuan/xiaonuan.env`, never in Git or frontend assets. Deployment notes are in `server/README.md`.
 
 ## Android APK
 

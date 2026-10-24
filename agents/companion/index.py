@@ -3,6 +3,7 @@ import json
 import re
 import time
 import uuid
+from datetime import datetime
 
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 
@@ -58,6 +59,59 @@ async def handler(ctx):
         mem = await _users.load_memory(ctx, username)
         mem["username"] = username
         return mem
+
+    # ---- 语音会话上下文：让端到端语音模型带上用户用药/档案，理解并操作 ----
+    if action == "voice_context":
+        mem = await _users.load_memory(ctx, username)
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        meds = mem.get("medications") or []
+        meds_out = []
+        for m in meds:
+            if not isinstance(m, dict) or not m.get("name"):
+                continue
+            times = [str(t) for t in (m.get("reminder_times") or []) if re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", str(t))]
+            log = m.get("taken_log") or []
+            status = {}
+            for t in times:
+                entry = next((e for e in log if isinstance(e, dict) and e.get("date") == today and e.get("time") == t), None)
+                status[t] = entry.get("status") if isinstance(entry, dict) and entry.get("status") in ("taken", "skipped") else "pending"
+            meds_out.append({
+                "name": m["name"],
+                "dosage": (m.get("dosage") or "").strip(),
+                "frequency": (m.get("frequency") or "").strip(),
+                "reminder_times": times,
+                "today_status": status,
+            })
+        return {
+            "now": now.strftime("%H:%M"),
+            "today": today,
+            "profile": _safe_profile(mem.get("profile")),
+            "medications": meds_out,
+        }
+
+    # ---- 标记某顿药已服/跳过：语音模型调用，可靠落库，不走模糊解析 ----
+    if action == "medication_taken":
+        name = (body.get("med_name") or "").strip()
+        dose_time = (body.get("dose_time") or "").strip()
+        status = (body.get("status") or "taken").strip()
+        if status not in ("taken", "skipped"):
+            status = "taken"
+        if not name or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", dose_time):
+            return {"error": "请说明是哪一顿药、几点"}, 400
+        mem = await _users.load_memory(ctx, username)
+        meds = mem.get("medications") or []
+        target = next((m for m in meds if isinstance(m, dict) and m.get("name") == name), None)
+        if not target:
+            return {"error": f"没找到「{name}」的用药记录"}, 404
+        today = datetime.now().strftime("%Y-%m-%d")
+        log = [e for e in (target.get("taken_log") or []) if isinstance(e, dict)]
+        log = [e for e in log if not (e.get("date") == today and e.get("time") == dose_time)]
+        log.append({"date": today, "time": dose_time, "status": status, "at": int(time.time())})
+        target["taken_log"] = log[-60:]
+        await _users.save_memory(ctx, username, medications=meds, replace_medications=False)
+        label = "记下了，这顿吃过了" if status == "taken" else "好的，这顿先不吃了"
+        return {"ok": True, "med_name": name, "dose_time": dose_time, "status": status, "message": label}
 
     # ---- 一键清空记忆 ----
     if action == "memory_clear":

@@ -1,0 +1,12 @@
+# 陪诊小暖 - 豆包实时语音 WebSocket 中继
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY server/package.json /app/package.json
+RUN npm install --omit=dev
+
+COPY server/realtime.mjs /app/realtime.mjs
+
+EXPOSE 8081
+CMD ["node", "/app/realtime.mjs"]

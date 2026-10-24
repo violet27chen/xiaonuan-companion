@@ -7,7 +7,6 @@ import httpx
 
 
 MAX_IMAGE_BYTES = 6 * 1024 * 1024
-ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
 _TIME_RE = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
 
 PROMPT = """请阅读这张药盒、药品包装、处方、出院记录或医生交代单，只整理图上明确可读的信息，不做诊断、不提出治疗建议。
@@ -74,8 +73,8 @@ async def parse_medication_photo(env, image_b64, mime):
     base_url = (env.get("MIMO_BASE_URL") or "").rstrip("/")
     if not api_key or not base_url:
         raise ValueError("图片识别服务暂不可用，请稍后再试")
-    if mime not in ALLOWED_MIME or not isinstance(image_b64, str):
-        raise ValueError("请使用 JPG、PNG 或 WebP 图片")
+    if not isinstance(mime, str) or not mime.lower().startswith("image/") or not isinstance(image_b64, str):
+        raise ValueError("请选择图片文件（JPG、PNG、WebP、HEIC 等都可以）")
     if len(image_b64) > (MAX_IMAGE_BYTES * 4 // 3) + 16:
         raise ValueError("照片太大，请重新拍摄或先裁剪")
     try:
@@ -97,7 +96,7 @@ async def parse_medication_photo(env, image_b64, mime):
         "max_completion_tokens": 1800,
     }
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=40) as client:
             response = await client.post(
                 f"{base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},

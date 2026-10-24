@@ -398,7 +398,7 @@ export default function MemoryPanel({ onClose, focusDispenser = false }) {
                 </div>
                 {reminderStatus && <p className="mt-2 text-[12px] text-[#287f80]">{reminderStatus}</p>}
                 {!(mem.medications || []).some((m) => normalizeReminderTimes(m.reminder_times).length) && (
-                  <p className="mt-2 text-[12px] text-[#a07142]">先点“编辑”，为用药记录填写准确钟点，例如 08:00、20:00。</p>
+                  <p className="mt-2 text-[12px] text-[#769092]">小暖会自动按常见时间（每天约3次）提醒；开启提醒后可在“编辑”里调整具体钟点。</p>
                 )}
               </section>
               <SmartDispenserPanel medications={mem.medications || []} autoExpand={focusDispenser} />
@@ -436,7 +436,7 @@ export default function MemoryPanel({ onClose, focusDispenser = false }) {
                 <h3 className="mb-2 text-[14px] font-medium text-[#769092]">健康档案（编辑）</h3>
                 <KVEditor data={draftProfile} onChange={setDraftProfile} />
               </section>
-              <p className="text-[13px] leading-relaxed text-[#769092]">保存后小暖会在后续对话中参考这些记录。填写准确钟点后，可在记忆页开启提醒。</p>
+              <p className="text-[13px] leading-relaxed text-[#769092]">保存后小暖会在后续对话中参考这些记录；提醒时间可直接开启，之后在“编辑”里调整钟点即可。</p>
             </>
           )}
         </div>

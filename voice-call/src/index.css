@@ -156,3 +156,20 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* 拍照/识药弹层：高度约束必须有浏览器回退，否则在部分 WebView（不支持 dvh）里
+   max-height 失效，弹层整体长过屏幕，顶部“关闭”按钮被顶出可视区且内部无法滚动 */
+.photo-sheet {
+  max-height: 92vh;
+}
+@supports (max-height: 1dvh) {
+  .photo-sheet {
+    max-height: 94dvh;
+  }
+}
+/* 弹层内部滚动区：确保触屏可竖向滚动、并被约束在弹层高度内 */
+.photo-sheet-body {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}

@@ -1,0 +1,70 @@
+# 陪诊小暖 - 一键部署（PostgreSQL + 后端 API + 语音中继 + Web 前端）
+# 用法：
+#   1) 复制 .env.example 为 .env 并填入密钥（MIMO_API_KEY / DOUBAO_REALTIME_API_KEY 必填）
+#   2) docker compose up -d --build
+#   3) 浏览器打开 http://localhost:8080
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-xiaonuan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-xiaonuan}
+      POSTGRES_DB: ${POSTGRES_DB:-xiaonuan}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-xiaonuan}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile.api
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-xiaonuan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-xiaonuan}
+      POSTGRES_DB: ${POSTGRES_DB:-xiaonuan}
+      MIMO_API_KEY: ${MIMO_API_KEY}
+      MIMO_BASE_URL: ${MIMO_BASE_URL:-https://api.xiaomimimo.com/v1}
+      MIMO_LLM_MODEL: ${MIMO_LLM_MODEL:-mimo-v2.6-flash}
+      MIMO_VISION_MODEL: ${MIMO_VISION_MODEL:-mimo-v2.6-flash}
+      AI_GATEWAY_BASE_URL: ${AI_GATEWAY_BASE_URL}
+      AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY}
+      DOUBAO_REALTIME_API_KEY: ${DOUBAO_REALTIME_API_KEY}
+      COZE_API_BASE: ${COZE_API_BASE:-https://api.coze.cn}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  relay:
+    build:
+      context: .
+      dockerfile: server/Dockerfile.relay
+    restart: unless-stopped
+    environment:
+      REALTIME_PORT: 8081
+      DOUBAO_REALTIME_API_KEY: ${DOUBAO_REALTIME_API_KEY}
+      # 容器内通过服务名指向后端 API
+      COMPANION_URL: http://api:8000/companion
+    depends_on:
+      - api
+
+  web:
+    build:
+      context: .
+      dockerfile: server/Dockerfile.web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+      - relay
+
+volumes:
+  pgdata:

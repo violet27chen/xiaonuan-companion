@@ -35,10 +35,10 @@ export default function AuthPanel({ onAuth }) {
   const inputClass = "w-full rounded-2xl border border-[#dce8e7] bg-[#f9fbfb] px-4 py-3.5 text-[16px] text-[#19383f] placeholder-[#94a9aa] outline-none transition focus:border-[#318a89] focus:bg-white focus:ring-4 focus:ring-[#318a89]/10";
 
   return (
-    <main className="relative min-h-dvh overflow-x-hidden overflow-y-auto bg-[#f2f7f6] text-[#19383f]">
+    <main className="relative min-h-screen overflow-x-hidden overflow-y-auto bg-[#f2f7f6] text-[#19383f]">
       <div className="pointer-events-none absolute -left-28 -top-32 h-80 w-80 rounded-full bg-[#d9eeea] blur-3xl" />
       <div className="pointer-events-none absolute -bottom-40 -right-24 h-96 w-96 rounded-full bg-[#fae8da] blur-3xl" />
-      <div className="relative mx-auto grid min-h-dvh max-w-6xl items-center gap-6 px-5 py-8 md:grid-cols-[1.1fr_.9fr] md:gap-12 md:px-10">
+      <div className="relative mx-auto grid min-h-screen max-w-6xl items-center gap-6 px-5 py-8 md:grid-cols-[1.1fr_.9fr] md:gap-12 md:px-10">
         <section className="hidden flex-col items-center text-center md:flex">
           <div className="mb-2 rounded-full border border-white/80 bg-white/70 px-4 py-2 text-[13px] font-medium tracking-wide text-[#548080] shadow-sm">
             VOICE FIRST · CARE WITH WARMTH

@@ -10,7 +10,7 @@ import { getSpeechSpeed, isCaptionsEnabled, setAudioMuted, setCaptionsEnabled, s
 import { syncMedicationReminders, normalizeReminderTimes, remindersEnabled } from "../lib/reminders.js";
 
 export default function CallScreen() {
-  const { phase, micOn, micConnecting, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, pauseMic, resumeListening, repeatLastReply, speakWelcome, hasLastReply, voiceCommand, speak, markPhotoConfirmAwaiting } = useConversation();
+  const { phase, micOn, micConnecting, level, subtitle, cards, dismissCard, demoMode, micError, toggleMic, activateMic, pauseMic, resumeListening, repeatLastReply, speakWelcome, hasLastReply, voiceCommand, speak, markPhotoConfirmAwaiting, reminderPrompt, speakReminder } = useConversation();
   const [speakerOn, setSpeakerOn] = useState(() => {
     try { return localStorage.getItem("xn_speaker_on") !== "0"; } catch { return true; }
   });
@@ -293,7 +293,7 @@ export default function CallScreen() {
   }, []);
 
   return (
-    <div className={`relative flex h-dvh flex-col overflow-hidden bg-[#f2f7f6] text-[#19383f]${largeCaptions ? " large-captions" : ""}`}>
+    <div className={`relative flex h-screen flex-col overflow-hidden bg-[#f2f7f6] text-[#19383f]${largeCaptions ? " large-captions" : ""}`}>
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-28 top-16 h-72 w-72 rounded-full bg-[#dff0ec] blur-3xl" />
         <div className="absolute -right-32 top-1/3 h-80 w-80 rounded-full bg-[#fbe9dc] blur-3xl" />
@@ -325,6 +325,14 @@ export default function CallScreen() {
         <button type="button" onClick={openMemoryPanel} className="relative z-10 mx-auto mt-3 flex items-center gap-2 rounded-full border border-[#f4dfc8] bg-[#fff8ef]/90 px-4 py-2 text-[12px] text-[#956543]">
           <Pill size={14} />
           {nextDose.times.length ? <>{nextDose.reminderEnabled ? "提醒已开启" : "已设置时间，点此开启提醒"}：<b className="font-semibold text-[#85552f]">{nextDose.times.join("、")}</b></> : nextDose.time ? <>医生提到的服药时间：<b className="font-semibold text-[#85552f]">{nextDose.time}</b></> : <>已保存 {nextDose.meds.length} 条用药记录 · 设置提醒</>}
+        </button>
+      )}
+
+      {reminderPrompt && (
+        <button type="button" onClick={speakReminder}
+          className="relative z-10 mx-auto mt-3 flex animate-pulse items-center gap-2 rounded-full border border-[#f4dfc8] bg-[#fff8ef] px-4 py-2 text-[12px] text-[#956543] shadow-[0_8px_24px_rgba(150,90,40,.12)]">
+          <Pill size={14} />
+          到吃药时间了：{reminderPrompt.name}{reminderPrompt.dosage ? `，${reminderPrompt.dosage}` : ""}{reminderPrompt.time ? `（${reminderPrompt.time}）` : ""} · <b className="font-semibold text-[#85552f]">让小暖说</b>
         </button>
       )}
 

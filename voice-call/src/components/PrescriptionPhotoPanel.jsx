@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, Check, LoaderCircle, RotateCcw, X } from "lucide-react";
+import { Camera, Check, Image as ImageIcon, LoaderCircle, RotateCcw, X } from "lucide-react";
 import { fetchMemory, saveMemory } from "../lib/auth.js";
 import { compressPrescriptionPhoto, recognizePrescription } from "../lib/medicationPhoto.js";
 import { defaultReminderTimes, normalizeTimes, timesToSpeech } from "../lib/medicationSchedule.js";
@@ -37,6 +37,8 @@ export default function PrescriptionPhotoPanel({ onClose, onSpeak, onReadBack, o
   const [readBack, setReadBack] = useState("");
   const autoRecognizeRef = useRef(false);
   const itemsSnapshotRef = useRef("");
+  const cameraInputRef = useRef(null);
+  const albumInputRef = useRef(null);
 
   useEffect(() => {
     if (!file) { setPreview(""); return undefined; }
@@ -44,6 +46,16 @@ export default function PrescriptionPhotoPanel({ onClose, onSpeak, onReadBack, o
     setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
+
+  // 语音说“药怎么吃/帮我看药盒”等自动打开面板时，尽量直接唤起相机（手机上会弹出摄像头）。
+  // 注意：语音指令不是用户手势，部分浏览器会拦截程序化 click；拦截时下方“拍照”按钮仍可手动唤起。
+  useEffect(() => {
+    if (!autoOpened || file) return undefined;
+    const timer = setTimeout(() => {
+      try { cameraInputRef.current?.click(); } catch {}
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [autoOpened, file]);
 
   function resetAll() {
     setFile(null);
@@ -180,7 +192,7 @@ export default function PrescriptionPhotoPanel({ onClose, onSpeak, onReadBack, o
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-[#19383f]/45 p-0 backdrop-blur-sm sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-labelledby="photo-title">
-      <section className="flex max-h-[94dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-t-[28px] bg-[#f9fbfb] shadow-2xl sm:rounded-[28px]">
+      <section className="photo-sheet flex w-full max-w-[560px] flex-col overflow-hidden rounded-t-[28px] bg-[#f9fbfb] shadow-2xl sm:rounded-[28px]">
         <header className="flex items-center justify-between border-b border-[#dce8e7] px-5 py-4" style={{ paddingTop: "max(16px, env(safe-area-inset-top))" }}>
           <div>
             <h2 id="photo-title" className="text-[18px] font-semibold text-[#19383f]">拍张照片给小暖看</h2>
@@ -191,11 +203,11 @@ export default function PrescriptionPhotoPanel({ onClose, onSpeak, onReadBack, o
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+        <div className="photo-sheet-body min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <p className="rounded-2xl border border-[#f1dfc8] bg-[#fff8ef] p-3.5 text-[14px] leading-6 text-[#805f43]">
             拍清楚药盒、处方或医嘱上的文字，小暖会自动识别并整理，不用点发送。建议先遮住姓名、身份证号、就诊卡号等个人信息；识别结果请对照原件核对，药盒上的规格不代表每次服用剂量，小暖不会据此判断怎么吃药，也不会保存原照片。
           </p>
-          {autoOpened && !saved && <p className="rounded-xl bg-[#edf6f4] px-3.5 py-3 text-[14px] leading-5 text-[#287f80]">您刚才提到了药品，我已经帮您打开拍照入口。对准药盒或医嘱拍一张，拍好了跟我说一声“我拍好了”就行。</p>}
+          {autoOpened && !saved && <p className="rounded-xl bg-[#edf6f4] px-3.5 py-3 text-[14px] leading-5 text-[#287f80]">您刚才提到了药品，我已经帮您打开拍照入口。点下面的<b>“拍照”</b>直接用摄像头拍药盒或医嘱，拍好了跟我说一声“我拍好了”就行。</p>}
 
           {preview ? (
             <div className="relative overflow-hidden rounded-2xl border border-[#dce8e7] bg-white">
@@ -207,12 +219,20 @@ export default function PrescriptionPhotoPanel({ onClose, onSpeak, onReadBack, o
               )}
             </div>
           ) : (
-            <label className="flex min-h-40 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[#b9d8d3] bg-white text-center text-[#287f80]">
-              <Camera size={32} strokeWidth={1.7} />
-              <span className="text-[16px] font-medium">拍照或从相册选择</span>
-              <span className="text-[13px] text-[#769092]">拍好了跟我说“我拍好了”，小暖自动识别</span>
-              <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="sr-only" onChange={(event) => chooseFile(event.target.files?.[0])} />
-            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => cameraInputRef.current?.click()} className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-[#78b6ae] bg-[#edf6f4] text-[#1f6e6c]">
+                <Camera size={32} strokeWidth={1.7} />
+                <span className="text-[16px] font-semibold">拍照</span>
+                <span className="text-[12px] text-[#5b8a86]">直接用摄像头拍药盒/医嘱</span>
+              </button>
+              <button type="button" onClick={() => albumInputRef.current?.click()} className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[#b9d8d3] bg-white text-[#287f80]">
+                <ImageIcon size={32} strokeWidth={1.7} />
+                <span className="text-[16px] font-semibold">从相册选择</span>
+                <span className="text-[12px] text-[#769092]">从手机相册里选一张</span>
+              </button>
+              <input ref={cameraInputRef} type="file" capture="environment" className="sr-only" onChange={(event) => chooseFile(event.target.files?.[0])} />
+              <input ref={albumInputRef} type="file" className="sr-only" onChange={(event) => chooseFile(event.target.files?.[0])} />
+            </div>
           )}
 
           {busy && !saved && (

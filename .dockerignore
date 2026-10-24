@@ -1,0 +1,21 @@
+# 构建上下文排除项（保持镜像精简、避免把本地环境带进去）
+node_modules
+.venv
+.git
+android
+Temp
+.edgeone
+edgeone.json
+cloud-functions
+xnai-site
+docs
+assets
+sql
+*.apk
+*.pem
+.env
+.uv-cache
+server/.uv-cache
+**/__pycache__
+**/*.pyc
+**/dist
