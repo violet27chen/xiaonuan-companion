@@ -285,10 +285,11 @@ const port = Number(process.env.REALTIME_PORT || 8081);
 
 const TTS_URL = "https://openspeech.bytedance.com/api/v3/tts/unidirectional";
 const TTS_RESOURCE_ID = "seed-tts-2.0";
-// 默认音色：zh_female_vv_uranus_bigtts（seed-tts-2.0 下本账号可用）。
-// 注意：实时对话用的 zh_female_xiaohe_jupiter_bigtts 属于另一套未开通的资源，
-// 无法通过「音频生成 HTTP」调用，故这里用可工作的音色，并允许 DOUBAO_TTS_SPEAKER 覆盖。
-const TTS_DEFAULT_SPEAKER = process.env.DOUBAO_TTS_SPEAKER || "zh_female_vv_uranus_bigtts";
+// 默认音色：zh_female_xiaohe_uranus_bigtts（小何 2.0）。
+// 这是实时对话用的 zh_female_xiaohe_jupiter_bigtts 在「音频生成 HTTP」（seed-tts-2.0 集群）
+// 下的对应声线，声线一致；HTTP 版与全双工版后缀不同（uranus vs jupiter）。
+// 可用 DOUBAO_TTS_SPEAKER 覆盖（须为 seed-tts-2.0 下已开通的音色，见火山引擎音色列表）。
+const TTS_DEFAULT_SPEAKER = process.env.DOUBAO_TTS_SPEAKER || "zh_female_xiaohe_uranus_bigtts";
 
 function readJsonBody(req, limit = 1 << 16) {
   return new Promise((resolve, reject) => {
